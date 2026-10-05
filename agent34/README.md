@@ -17,3 +17,8 @@
 - 同名の既存ファイルは `agent34-kit\backup-日時\` に退避される
 - 詳しい使い方: `AGENT34-導入手順と使い方ガイド.pdf`
 - 止めたいときは `cancelomc`
+
+## かんたん起動（Windows）
+
+`START-AGENT34.bat` をダブルクリックすると、Claude Code が起動してキットの構築が始まります（`claude` コマンドが入っていること）。
+許可を求められたら、`%USERPROFILE%\.claude` への書き込みとキット付属スクリプトの実行だけ許可してください。終わったら Claude Code を開き直して「34体チェック」と入力します。
