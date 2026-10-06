@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>不動産ノート</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1c2430;--mute:#6b7685;--line:#e2e6ec;--accent:#1f6feb;--accent-ink:#fff;--ok:#1a8f4c;--warn:#c27c00;--bad:#c93c37;--chip:#eef2f8}
+@media(prefers-color-scheme:dark){:root{--bg:#12161c;--card:#1b2129;--ink:#e8ecf2;--mute:#8d98a8;--line:#2a323d;--accent:#4c8dff;--accent-ink:#06101f;--ok:#3ec57a;--warn:#e0a23a;--bad:#ef6b66;--chip:#252d38}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.bar{max-width:1100px;margin:auto;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:18px;margin:0;margin-right:auto}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:none;border:0;color:var(--mute);padding:8px 12px;border-radius:8px;font:inherit;cursor:pointer}
+nav button.on{background:var(--chip);color:var(--ink);font-weight:600}
+main{max-width:1100px;margin:auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+h2{font-size:16px;margin:0 0 12px}
+.grid{display:grid;gap:12px}
+.g4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.g2{grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.stat .v{font-size:24px;font-weight:700}.stat .l{color:var(--mute);font-size:13px}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px;width:100%}
+label{display:block;font-size:13px;color:var(--mute)}
+label>input,label>select,label>textarea{margin-top:3px}
+button.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 14px;border-radius:8px;cursor:pointer}
+button.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.btn.dng{color:var(--bad)}
+button.btn:hover{filter:brightness(.96)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.row>*{flex:1 1 140px}.row>.fit{flex:0 0 auto}
+.props{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(310px,1fr))}
+.prop{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--card);display:flex;flex-direction:column;gap:6px}
+.prop h3{margin:0;font-size:16px}
+.price{font-size:20px;font-weight:700}
+.meta{color:var(--mute);font-size:13px}
+.chip{display:inline-block;background:var(--chip);border-radius:99px;padding:1px 10px;font-size:12px;margin-right:4px}
+.s-検討中{color:var(--mute)}.s-内見済{color:var(--accent)}.s-申込{color:var(--warn)}.s-契約{color:var(--ok)}.s-見送り{color:var(--bad)}
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:6px}
+.acts .btn{padding:4px 10px;font-size:13px}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
+.scroll{overflow-x:auto}
+.best{color:var(--ok);font-weight:700}
+.kan{display:grid;grid-template-columns:repeat(5,minmax(170px,1fr));gap:10px;overflow-x:auto}
+.kan>div{background:var(--bg);border-radius:10px;padding:8px;min-height:80px}
+.kan h4{margin:0 0 6px;font-size:13px}
+.kan .k{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:6px;font-size:13px;cursor:pointer}
+.good{color:var(--ok)}.bad{color:var(--bad)}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--ink);max-width:640px;width:calc(100% - 32px);padding:18px}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.form .w{grid-column:1/-1}
+.bars .r{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:13px}
+.bars .n{width:90px;flex:none}.bars .b{height:14px;background:var(--accent);border-radius:4px;min-width:2px}
+.note{font-size:12px;color:var(--mute)}
+svg text{fill:var(--mute);font-size:11px}
+@media(max-width:600px){main{padding:10px}.kan{grid-template-columns:repeat(5,200px)}}
+</style>
+</head>
+<body>
+<header><div class="bar">
+<h1>🏠 不動産ノート</h1>
+<nav id="nav"></nav>
+</div></header>
+<main id="view"></main>
+<dialog id="dlg"></dialog>
+
+<script>
+'use strict';
+const STATUSES=['検討中','内見済','申込','契約','見送り'];
+const TYPES=['マンション','アパート','一戸建て','土地','ビル・店舗'];
+const KEY='ontime-realestate-v1';
+const yen=n=>isFinite(n)?Math.round(n).toLocaleString('ja-JP')+'円':'-';
+const man=n=>isFinite(n)?(n/10000).toLocaleString('ja-JP',{maximumFractionDigits:1})+'万円':'-';
+const pct=n=>isFinite(n)?(n*100).toFixed(2)+'%':'-';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=(s,r=document)=>r.querySelector(s);
+
+/* ---------- サンプルデータ ---------- */
+const SAMPLE=[
+ {name:'(サンプル)渋谷区 築浅1LDK',type:'マンション',purpose:'居住',address:'東京都渋谷区',station:'渋谷',walk:7,price:68000000,rent:240000,area:42.5,layout:'1LDK',age:6,mgmt:21000,tax:140000,status:'内見済',note:'日当たり良好。管理組合の修繕積立金が低めなのが気になる。'},
+ {name:'(サンプル)世田谷区 区分ワンルーム',type:'マンション',purpose:'投資',address:'東京都世田谷区',station:'三軒茶屋',walk:5,price:29800000,rent:112000,area:25.1,layout:'1R',age:12,mgmt:13500,tax:62000,status:'検討中',note:'サブリース無し。入居率は高いエリア。'},
+ {name:'(サンプル)大阪市 一棟アパート',type:'アパート',purpose:'投資',address:'大阪府大阪市東淀川区',station:'上新庄',walk:9,price:85000000,rent:640000,area:260,layout:'8戸',age:18,mgmt:0,tax:420000,status:'申込',note:'全8戸中7戸入居。屋根の修繕履歴を要確認。'},
+ {name:'(サンプル)福岡市 中古戸建',type:'一戸建て',purpose:'居住',address:'福岡県福岡市早良区',station:'藤崎',walk:12,price:38000000,rent:150000,area:98.2,layout:'4LDK',age:15,mgmt:0,tax:110000,status:'検討中',note:'小学校が近い。駐車場2台。'},
+ {name:'(サンプル)名古屋市 駅前土地',type:'土地',purpose:'投資',address:'愛知県名古屋市中村区',station:'名古屋',walk:8,price:52000000,rent:0,area:120,layout:'-',age:0,mgmt:0,tax:210000,status:'見送り',note:'用途地域と建ぺい率を確認したところ希望の規模は建たない。'},
+ {name:'(サンプル)札幌市 区分2LDK',type:'マンション',purpose:'投資',address:'北海道札幌市中央区',station:'円山公園',walk:4,price:24500000,rent:98000,area:55.3,layout:'2LDK',age:20,mgmt:17000,tax:75000,status:'検討中',note:'大規模修繕が直近で完了済み。'},
+ {name:'(サンプル)横浜市 1階店舗付きビル',type:'ビル・店舗',purpose:'投資',address:'神奈川県横浜市中区',station:'関内',walk:3,price:120000000,rent:850000,area:210,layout:'4F',age:25,mgmt:0,tax:680000,status:'内見済',note:'1階テナントの契約期間が残り2年。'},
+ {name:'(サンプル)京都市 町家リノベ',type:'一戸建て',purpose:'投資',address:'京都府京都市下京区',station:'五条',walk:6,price:41000000,rent:230000,area:85,layout:'3LDK',age:50,mgmt:0,tax:95000,status:'契約',note:'民泊/マンスリー運用を検討。要リノベ費用。'}
+].map((p,i)=>({id:'s'+i,fav:i%3===0,...p}));
+
+/* ---------- 状態 ---------- */
+let S;
+function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
+ if(!S||!Array.isArray(S.props))S={props:SAMPLE.map(p=>({...p})),cmp:[],sim:{}};}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+load();
+let tab='dash';
+let F={q:'',type:'',status:'',purpose:'',maxPrice:'',minYield:'',fav:false,sort:'new'};
+let simId='';
+
+/* ---------- 計算 ---------- */
+const gross=p=>p.price>0&&p.rent>0?p.rent*12/p.price:NaN;
+const tsubo=p=>p.area>0?p.price/(p.area/3.30579):NaN;
+const sqm=p=>p.area>0?p.price/p.area:NaN;
+const noiSimple=p=>p.rent*12-p.mgmt*12-p.tax;
+const net=p=>p.price>0&&p.rent>0?noiSimple(p)/p.price:NaN;
+function pmt(P,rate,years){const n=years*12,r=rate/12;if(P<=0||n<=0)return 0;return r===0?P/n:P*r/(1-Math.pow(1+r,-n))}
+function balance(P,rate,years,months){const n=years*12,r=rate/12;if(r===0)return Math.max(0,P-P/n*months);const m=pmt(P,rate,years);return Math.max(0,P*Math.pow(1+r,months)-m*(Math.pow(1+r,months)-1)/r)}
+
+/* ---------- ユーティリティ ---------- */
+const uid=()=>'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const byId=id=>S.props.find(p=>p.id===id);
+function toast(m){const d=document.createElement('div');d.textContent=m;d.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:99px;z-index:99';document.body.append(d);setTimeout(()=>d.remove(),1800)}
+function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
+
+/* ---------- ナビ ---------- */
+const TABS=[['dash','ダッシュボード'],['list','物件検索'],['pipe','進捗管理'],['cmp','比較'],['sim','収支シミュレーター'],['data','データ']];
+function renderNav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${k===tab?'on':''}">${l}${k==='cmp'&&S.cmp.length?` (${S.cmp.length})`:''}</button>`).join('')}
+$('#nav').onclick=e=>{const b=e.target.closest('button');if(b){tab=b.dataset.t;render()}};
+function render(){$('#view').onclick=null;$('#view').oninput=null;renderNav();({dash,list,pipe,cmp,sim,data})[tab]();window.scrollTo(0,0)}
+const V=h=>{$('#view').innerHTML=h};
+
+/* ---------- ダッシュボード ---------- */
+function dash(){
+ const P=S.props,act=P.filter(p=>p.status!=='見送り');
+ const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:NaN;
+ const ys=act.map(gross).filter(isFinite);
+ const cnt=Object.fromEntries(STATUSES.map(s=>[s,P.filter(p=>p.status===s).length]));
+ const maxT=Math.max(1,...TYPES.map(t=>P.filter(p=>p.type===t).length));
+ const top=[...P].filter(p=>isFinite(gross(p))&&p.status!=='見送り').sort((a,b)=>gross(b)-gross(a)).slice(0,5);
+ V(`<div class="grid g4" style="margin-bottom:16px">
+ ${[['登録物件',P.length+'件'],['検討中の物件',act.length+'件'],['平均価格',man(avg(act.map(p=>p.price)))],['平均表面利回り',pct(avg(ys))],['お気に入り',P.filter(p=>p.fav).length+'件']].map(([l,v])=>`<div class="card stat" style="margin:0"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('')}</div>
+ <div class="grid g2">
+ <div class="card"><h2>進捗の内訳</h2>${STATUSES.map(s=>`<div class="bars"><div class="r"><span class="n s-${s}">${s}</span><span class="b" style="width:${cnt[s]/Math.max(1,P.length)*100*2.2}%"></span><span>${cnt[s]}</span></div></div>`).join('')}</div>
+ <div class="card"><h2>種別の内訳</h2>${TYPES.map(t=>{const n=P.filter(p=>p.type===t).length;return `<div class="bars"><div class="r"><span class="n">${t}</span><span class="b" style="width:${n/maxT*60}%"></span><span>${n}</span></div></div>`}).join('')}</div>
+ <div class="card"><h2>表面利回りの高い物件 TOP5</h2>${top.length?top.map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line)"><a href="#" data-sim="${p.id}">${esc(p.name)}</a><b>${pct(gross(p))}</b></div>`).join(''):'<p class="note">家賃が入力された物件がありません</p>'}</div>
+ <div class="card"><h2>このアプリの使い方</h2><ol style="margin:0;padding-left:20px"><li>「物件検索」で物件を登録・絞り込み</li><li>「進捗管理」で検討〜契約までを管理</li><li>「比較」で最大3件を並べて比較</li><li>「収支シミュレーター」でローンとCFを試算</li><li>「データ」でCSV/JSONの出し入れ</li></ol><p class="note">データはこのブラウザ内にだけ保存されます。</p></div>
+ </div>`);
+ $('#view').onclick=e=>{const a=e.target.closest('[data-sim]');if(a){e.preventDefault();simId=a.dataset.sim;tab='sim';render()}};
+}
+
+/* ---------- 物件検索 ---------- */
+function filtered(){
+ const q=F.q.trim().toLowerCase();
+ let r=S.props.filter(p=>{
+  if(q&&!(p.name+p.address+p.station+p.note).toLowerCase().includes(q))return false;
+  if(F.type&&p.type!==F.type)return false;
+  if(F.status&&p.status!==F.status)return false;
+  if(F.purpose&&p.purpose!==F.purpose)return false;
+  if(F.maxPrice&&p.price>F.maxPrice*10000)return false;
+  if(F.minYield&&!(gross(p)>=F.minYield/100))return false;
+  if(F.fav&&!p.fav)return false;return true});
+ const k={price_a:p=>p.price,price_d:p=>-p.price,yield:p=>-(gross(p)||-1),walk:p=>p.walk,age:p=>p.age}[F.sort];
+ if(k)r.sort((a,b)=>k(a)-k(b));else r.reverse();
+ return r;
+}
+function list(){
+ const opt=(a,v)=>a.map(x=>`<option ${x===v?'selected':''}>${x}</option>`).join('');
+ V(`<div class="card"><div class="row" id="flt">
+ <label>キーワード<input id="fq" value="${esc(F.q)}" placeholder="地名・駅名・メモ"></label>
+ <label>種別<select id="ft"><option value="">すべて</option>${opt(TYPES,F.type)}</select></label>
+ <label>目的<select id="fp"><option value="">すべて</option><option ${F.purpose==='居住'?'selected':''}>居住</option><option ${F.purpose==='投資'?'selected':''}>投資</option></select></label>
+ <label>進捗<select id="fs"><option value="">すべて</option>${opt(STATUSES,F.status)}</select></label>
+ <label>価格上限(万円)<input id="fm" type="number" min="0" value="${esc(F.maxPrice)}"></label>
+ <label>表面利回り下限(%)<input id="fy" type="number" min="0" step="0.1" value="${esc(F.minYield)}"></label>
+ <label>並び順<select id="fo">${[['new','新しい順'],['price_a','価格が安い'],['price_d','価格が高い'],['yield','利回りが高い'],['walk','駅から近い'],['age','築年が浅い']].map(([v,l])=>`<option value="${v}" ${F.sort===v?'selected':''}>${l}</option>`).join('')}</select></label>
+ <label class="fit" style="display:flex;gap:6px;align-items:center;padding-bottom:8px"><input id="ff" type="checkbox" style="width:auto" ${F.fav?'checked':''}>★のみ</label>
+ <button class="btn pri fit" id="add">＋ 物件を登録</button></div></div>
+ <div id="res"></div>`);
+ const upd=()=>{F.q=$('#fq').value;F.type=$('#ft').value;F.purpose=$('#fp').value;F.status=$('#fs').value;F.maxPrice=$('#fm').value;F.minYield=$('#fy').value;F.sort=$('#fo').value;F.fav=$('#ff').checked;cards()};
+ $('#flt').oninput=upd;$('#flt').onchange=upd;
+ $('#add').onclick=()=>editDlg();
+ $('#view').onclick=listClick;cards();
+}
+function cards(){
+ const r=filtered();
+ $('#res').innerHTML=`<p class="note">${r.length}件 / 全${S.props.length}件</p><div class="props">${r.map(card).join('')||'<p class="note">条件に合う物件がありません</p>'}</div>`;
+}
+function card(p){
+ const g=gross(p);
+ return `<div class="prop" data-id="${p.id}">
+ <div style="display:flex;justify-content:space-between;gap:8px"><h3>${esc(p.name)}</h3><button class="btn" data-a="fav" title="お気に入り" style="padding:0 8px;border:0;font-size:18px;color:${p.fav?'#e8a200':'var(--mute)'}">${p.fav?'★':'☆'}</button></div>
+ <div class="price">${man(p.price)}</div>
+ <div><span class="chip">${esc(p.type)}</span><span class="chip">${esc(p.purpose)}</span><span class="chip s-${esc(p.status)}">${esc(p.status)}</span></div>
+ <div class="meta">${esc(p.address)}／${esc(p.station)}駅 徒歩${esc(p.walk)}分</div>
+ <div class="meta">${esc(p.layout)}・${esc(p.area)}㎡・築${esc(p.age)}年${isFinite(tsubo(p))?`・坪単価 ${man(tsubo(p))}`:''}</div>
+ ${isFinite(g)?`<div class="meta">想定家賃 ${yen(p.rent)}/月・表面利回り <b>${pct(g)}</b></div>`:''}
+ ${p.note?`<div class="meta">📝 ${esc(p.note)}</div>`:''}
+ <div class="acts"><button class="btn" data-a="cmp">${S.cmp.includes(p.id)?'比較から外す':'比較に追加'}</button><button class="btn" data-a="sim">試算</button><button class="btn" data-a="edit">編集</button><button class="btn dng" data-a="del">削除</button></div></div>`;
+}
+function listClick(e){
+ const b=e.target.closest('[data-a]');if(!b)return;
+ const id=b.closest('.prop')?.dataset.id,p=byId(id),a=b.dataset.a;
+ if(a==='fav'){p.fav=!p.fav;save();cards()}
+ else if(a==='cmp'){const i=S.cmp.indexOf(id);if(i>=0)S.cmp.splice(i,1);else if(S.cmp.length>=3)return toast('比較は3件までです');else S.cmp.push(id);save();renderNav();cards()}
+ else if(a==='sim'){simId=id;tab='sim';render()}
+ else if(a==='edit')editDlg(p);
+ else if(a==='del'&&confirm(`「${p.name}」を削除しますか？`)){S.props=S.props.filter(x=>x.id!==id);S.cmp=S.cmp.filter(x=>x!==id);save();renderNav();cards()}
+}
+
+/* ---------- 編集ダイアログ ---------- */
+function editDlg(p){
+ const n=!p;p=p||{name:'',type:'マンション',purpose:'居住',address:'',station:'',walk:5,price:0,rent:0,area:0,layout:'',age:0,mgmt:0,tax:0,status:'検討中',note:''};
+ const d=$('#dlg');
+ const f=(k,l,t='text',x='')=>`<label>${l}<input name="${k}" type="${t}" value="${esc(p[k])}" ${x}></label>`;
+ const s=(k,l,a)=>`<label>${l}<select name="${k}">${a.map(v=>`<option ${v===p[k]?'selected':''}>${v}</option>`).join('')}</select></label>`;
+ d.innerHTML=`<form method="dialog" class="form" id="ef"><h2 class="w">${n?'物件を登録':'物件を編集'}</h2>
+ <div class="w">${f('name','物件名','text','required')}</div>
+ ${s('type','種別',TYPES)}${s('purpose','目的',['居住','投資'])}${s('status','進捗',STATUSES)}
+ <div class="w">${f('address','所在地')}</div>${f('station','最寄駅')}${f('walk','徒歩(分)','number','min="0"')}
+ ${f('price','価格(円)','number','min="0" step="100000"')}${f('rent','想定家賃(円/月)','number','min="0"')}
+ ${f('area','面積(㎡)','number','min="0" step="0.1"')}${f('layout','間取り・戸数')}${f('age','築年数','number','min="0"')}
+ ${f('mgmt','管理費・修繕積立金(円/月)','number','min="0"')}${f('tax','固定資産税等(円/年)','number','min="0"')}
+ <label class="w">メモ<textarea name="note" rows="3">${esc(p.note)}</textarea></label>
+ <div class="w row" style="justify-content:flex-end"><button class="btn fit" value="cancel" formnovalidate>キャンセル</button><button class="btn pri fit" value="ok">保存</button></div></form>`;
+ d.showModal();
+ $('#ef').onsubmit=ev=>{
+  if(ev.submitter?.value!=='ok')return;
+  const fd=new FormData($('#ef')),o={};
+  for(const [k,v] of fd)o[k]=['walk','price','rent','area','age','mgmt','tax'].includes(k)?(+v||0):v;
+  if(n)S.props.push({id:uid(),fav:false,...o});else Object.assign(p,o);
+  save();toast('保存しました');setTimeout(render,0)};
+}
+
+/* ---------- 進捗管理 ---------- */
+function pipe(){
+ V(`<div class="card"><h2>進捗ボード</h2><p class="note">カードをクリックすると進捗を変更できます。</p><div class="kan">${STATUSES.map(s=>{const a=S.props.filter(p=>p.status===s);return `<div><h4 class="s-${s}">${s}（${a.length}）</h4>${a.map(p=>`<div class="k" data-id="${p.id}"><b>${esc(p.name)}</b><br><span class="meta">${man(p.price)}</span></div>`).join('')}</div>`}).join('')}</div></div>`);
+ $('#view').onclick=e=>{const k=e.target.closest('.k');if(!k)return;const p=byId(k.dataset.id);
+  const d=$('#dlg');d.innerHTML=`<form method="dialog" class="form"><h2 class="w">${esc(p.name)}</h2><p class="w meta">${man(p.price)}／${esc(p.address)}</p>
+  <label class="w">進捗<select id="ns">${STATUSES.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select></label>
+  <label class="w">メモ<textarea id="nn" rows="3">${esc(p.note)}</textarea></label>
+  <div class="w row" style="justify-content:flex-end"><button class="btn fit" value="cancel">閉じる</button><button class="btn pri fit" value="ok">更新</button></div></form>`;
+  d.showModal();$('form',d).onsubmit=ev=>{if(ev.submitter?.value!=='ok')return;p.status=$('#ns').value;p.note=$('#nn').value;save();setTimeout(render,0)}};
+}
+
+/* ---------- 比較 ---------- */
+function cmp(){
+ const A=S.cmp.map(byId).filter(Boolean);
+ if(!A.length){V('<div class="card"><h2>比較</h2><p>「物件検索」で「比較に追加」を押すと、最大3件を並べて比較できます。</p></div>');return}
+ const rows=[['価格',p=>p.price,man,'min'],['表面利回り',gross,pct,'max'],['実質利回り(簡易)',net,pct,'max'],['想定家賃/月',p=>p.rent,yen,'max'],['坪単価',tsubo,man,'min'],['㎡単価',sqm,yen,'min'],['面積',p=>p.area,v=>v+'㎡','max'],['築年数',p=>p.age,v=>v+'年','min'],['駅徒歩',p=>p.walk,v=>v+'分','min'],['管理費等/月',p=>p.mgmt,yen,'min'],['固定資産税/年',p=>p.tax,yen,'min']];
+ V(`<div class="card"><h2>物件比較</h2><div class="scroll"><table><tr><th></th>${A.map(p=>`<th>${esc(p.name)}</th>`).join('')}</tr>
+ <tr><td>所在地</td>${A.map(p=>`<td>${esc(p.address)}</td>`).join('')}</tr><tr><td>最寄駅</td>${A.map(p=>`<td>${esc(p.station)}</td>`).join('')}</tr>
+ ${rows.map(([l,f,fmt,best])=>{const v=A.map(f),ok=v.filter(x=>isFinite(x)&&x>0);const b=ok.length>1?(best==='min'?Math.min(...ok):Math.max(...ok)):null;
+  return `<tr><td>${l}</td>${v.map(x=>`<td class="${b!==null&&x===b?'best':''}">${isFinite(x)&&x>0?fmt(x):'-'}</td>`).join('')}</tr>`}).join('')}</table></div>
+ <p class="note">緑＝比較している物件の中で最も有利な値</p>
+ <button class="btn" id="clr">比較をクリア</button></div>`);
+ $('#clr').onclick=()=>{S.cmp=[];save();render()};
+}
+
+/* ---------- 収支シミュレーター ---------- */
+function sim(){
+ const base=byId(simId);
+ const D=Object.assign({price:3000e4,rent:12e4,mgmt:1.5e4,tax:6e4,other:0,down:20,rate:1.8,years:30,vac:5,cost:7,hold:15,growth:0,exit:0,tax2:20},S.sim||{});
+ if(base&&S.sim?._for!==simId){Object.assign(D,{price:base.price,rent:base.rent,mgmt:base.mgmt,tax:base.tax});D._for=simId;S.sim=D;save()}
+ const o=p=>[`<option value="">（手入力）</option>`,...S.props.map(x=>`<option value="${x.id}" ${x.id===simId?'selected':''}>${esc(x.name)}</option>`)].join('');
+ const f=(k,l,u,st='1')=>`<label>${l}（${u}）<input data-k="${k}" type="number" step="${st}" value="${D[k]}"></label>`;
+ V(`<div class="card"><h2>収支シミュレーター</h2><div class="form">
+ <label class="w">物件を選ぶ<select id="sp">${o()}</select></label>
+ ${f('price','購入価格','円','100000')}${f('rent','満室想定家賃','円/月','1000')}${f('mgmt','管理費・修繕積立金','円/月','1000')}${f('tax','固定資産税等','円/年','1000')}${f('other','その他経費(保険・管理委託等)','円/年','1000')}
+ ${f('vac','空室率','%','0.5')}${f('cost','購入諸費用','%','0.5')}${f('down','自己資金(頭金)','%','1')}${f('rate','金利(年)','%','0.05')}${f('years','返済期間','年','1')}
+ ${f('hold','保有期間','年','1')}${f('growth','年間の価格変動','%','0.5')}${f('tax2','売却時の税率(譲渡益)','%','1')}
+ </div></div><div id="out"></div>`);
+ $('#sp').onchange=e=>{simId=e.target.value;S.sim={...D,_for:null};save();sim()};
+ $('#view').oninput=e=>{const k=e.target.dataset?.k;if(!k)return;D[k]=+e.target.value||0;S.sim=D;save();calc(D)};
+ $('#view').onclick=null;calc(D);
+}
+function calc(D){
+ const price=D.price,cost=price*D.cost/100,loan=Math.max(0,price*(1-D.down/100));
+ const equity=price*D.down/100+cost;
+ const gi=D.rent*12*(1-D.vac/100);
+ const opex=D.mgmt*12+D.tax+D.other;
+ const noi=gi-opex,mp=pmt(loan,D.rate/100,D.years),ds=mp*12,cf=noi-ds;
+ const cap=price>0?noi/(price+cost):NaN,grossY=price>0?D.rent*12/price:NaN;
+ const coc=equity>0?cf/equity:NaN;
+ const dscr=ds>0?noi/ds:NaN;
+ const be=D.rent>0?(opex+ds)/(D.rent*12):NaN;
+ // 年次
+ const yrs=Math.max(1,Math.min(50,Math.round(D.hold)));let cum=-equity,pts=[{y:0,v:cum}];
+ for(let y=1;y<=yrs;y++){cum+=y*12<=D.years*12?cf:noi;pts.push({y,v:cum})}
+ const sale=price*Math.pow(1+D.growth/100,yrs),bal=balance(loan,D.rate/100,D.years,yrs*12);
+ const gain=Math.max(0,sale-price),tx=gain*D.tax2/100;
+ const sell=sale-bal-tx-sale*0.03;
+ const total=cum+sell, roi=equity>0?(total)/equity:NaN;
+ const k=(l,v,c='')=>`<div class="card stat" style="margin:0"><div class="v ${c}">${v}</div><div class="l">${l}</div></div>`;
+ $('#out').innerHTML=`<div class="grid g4" style="margin-bottom:16px">
+ ${k('表面利回り',pct(grossY))}${k('実質利回り(NOI/総投資)',pct(cap))}${k('年間キャッシュフロー',yen(cf),cf>=0?'good':'bad')}${k('月間キャッシュフロー',yen(cf/12),cf>=0?'good':'bad')}
+ ${k('月々の返済額',yen(mp))}${k('借入額',man(loan))}${k('自己資金＋諸費用',man(equity))}${k('自己資金利回り(CCR)',pct(coc),coc>=0?'good':'bad')}
+ ${k('DSCR(返済余裕度)',isFinite(dscr)?dscr.toFixed(2):'-',dscr>=1.2?'good':'bad')}${k('損益分岐の入居率',pct(be),be<=0.8?'good':'bad')}</div>
+ <div class="grid g2"><div class="card"><h2>年間収支の内訳</h2><table>
+ <tr><td>満室家賃収入</td><td>${yen(D.rent*12)}</td></tr><tr><td>空室損失</td><td>-${yen(D.rent*12-gi)}</td></tr>
+ <tr><td>管理費・修繕積立金</td><td>-${yen(D.mgmt*12)}</td></tr><tr><td>固定資産税等</td><td>-${yen(D.tax)}</td></tr><tr><td>その他経費</td><td>-${yen(D.other)}</td></tr>
+ <tr><td><b>NOI(営業純収益)</b></td><td><b>${yen(noi)}</b></td></tr><tr><td>ローン返済(年)</td><td>-${yen(ds)}</td></tr>
+ <tr><td><b>税引前キャッシュフロー</b></td><td class="${cf>=0?'good':'bad'}"><b>${yen(cf)}</b></td></tr></table>
+ <p class="note">所得税・減価償却・大規模修繕費は含まない概算です。</p></div>
+ <div class="card"><h2>${yrs}年保有の累積キャッシュ</h2>${chart(pts)}
+ <table><tr><td>売却想定価格</td><td>${yen(sale)}</td></tr><tr><td>ローン残債</td><td>-${yen(bal)}</td></tr><tr><td>譲渡税・売却費用(3%)</td><td>-${yen(tx+sale*0.03)}</td></tr>
+ <tr><td><b>最終手残り(CF累計＋売却)</b></td><td class="${total>=0?'good':'bad'}"><b>${yen(total)}</b></td></tr><tr><td>自己資金に対する倍率</td><td>${isFinite(roi)?(1+roi).toFixed(2)+'倍':'-'}</td></tr></table></div></div>`;
+}
+function chart(pts){
+ const W=420,H=170,L=72,B=22,T=8,R=8,xs=pts.map(p=>p.y),ys=pts.map(p=>p.v);
+ const mn=Math.min(0,...ys),mx=Math.max(0,...ys)||1,x=y=>L+(W-L-R)*y/Math.max(1,xs[xs.length-1]),yy=v=>T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));
+ const path=pts.map((p,i)=>(i?'L':'M')+x(p.y).toFixed(1)+' '+yy(p.v).toFixed(1)).join('');
+ return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="累積キャッシュの推移"><line x1="${L}" x2="${W-R}" y1="${yy(0)}" y2="${yy(0)}" stroke="var(--line)"/>
+ <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+ <text x="${L-4}" y="${yy(mx)+4}" text-anchor="end">${man(mx)}</text><text x="${L-4}" y="${yy(mn)}" text-anchor="end">${man(mn)}</text>
+ <text x="${L}" y="${H-6}">0年</text><text x="${W-R}" y="${H-6}" text-anchor="end">${xs[xs.length-1]}年</text></svg>`;
+}
+
+/* ---------- データ ---------- */
+const COLS=['name','type','purpose','status','address','station','walk','price','rent','area','layout','age','mgmt','tax','note'];
+const HEAD=['物件名','種別','目的','進捗','所在地','最寄駅','徒歩(分)','価格(円)','想定家賃(円/月)','面積(㎡)','間取り','築年数','管理費等(円/月)','固定資産税(円/年)','メモ'];
+function toCSV(){const q=v=>{v=String(v??'');if(/^[=+\-@]/.test(v)&&isNaN(v))v="'"+v;return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v};
+ return '﻿'+[HEAD.join(','),...S.props.map(p=>COLS.map(c=>q(p[c])).join(','))].join('\r\n')}
+function parseCSV(t){t=t.replace(/^﻿/,'');const rows=[];let r=[],c='',q=false;
+ for(let i=0;i<t.length;i++){const ch=t[i];
+  if(q){if(ch==='"'){if(t[i+1]==='"'){c+='"';i++}else q=false}else c+=ch}
+  else if(ch==='"')q=true;else if(ch===','){r.push(c);c=''}
+  else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&t[i+1]==='\n')i++;r.push(c);c='';if(r.some(x=>x!==''))rows.push(r);r=[]}else c+=ch}
+ if(c!==''||r.length){r.push(c);rows.push(r)}return rows}
+function data(){
+ V(`<div class="grid g2"><div class="card"><h2>書き出し</h2><div class="row"><button class="btn pri" id="ec">CSV</button><button class="btn" id="ej">JSON(バックアップ)</button></div><p class="note">CSVはExcelでそのまま開けます。</p></div>
+ <div class="card"><h2>読み込み</h2><input type="file" id="fi" accept=".csv,.json"><p class="note">CSVは書き出しと同じ列順。JSONはバックアップ形式。読み込むと物件が追加されます（JSONは全置換）。</p></div>
+ <div class="card"><h2>リセット</h2><div class="row"><button class="btn" id="rs">サンプルに戻す</button><button class="btn dng" id="rm">全データを消去</button></div></div></div>`);
+ $('#ec').onclick=()=>download('物件一覧.csv',toCSV(),'text/csv');
+ $('#ej').onclick=()=>download('realestate-backup.json',JSON.stringify(S,null,1),'application/json');
+ $('#fi').onchange=async e=>{const f=e.target.files[0];if(!f)return;const t=await f.text();
+  try{if(f.name.endsWith('.json')){const j=JSON.parse(t);if(!Array.isArray(j.props))throw 0;if(!confirm('現在のデータをすべて置き換えます。よろしいですか？'))return;S={props:j.props,cmp:[],sim:j.sim||{}}}
+  else{const R=parseCSV(t);R.shift();let n=0;for(const r of R){const o={id:uid(),fav:false};COLS.forEach((c,i)=>{const v=r[i]??'';o[c]=['walk','price','rent','area','age','mgmt','tax'].includes(c)?(+v||0):v});
+   if(!TYPES.includes(o.type))o.type=TYPES[0];if(!STATUSES.includes(o.status))o.status=STATUSES[0];if(!['居住','投資'].includes(o.purpose))o.purpose='居住';if(o.name){S.props.push(o);n++}}toast(n+'件を追加しました')}
+  save();render()}catch(err){toast('読み込めませんでした')}};
+ $('#rs').onclick=()=>{if(confirm('サンプルデータに戻します。現在のデータは失われます。')){localStorage.removeItem(KEY);load();save();render()}};
+ $('#rm').onclick=()=>{if(confirm('全データを消去します。よろしいですか？')){S={props:[],cmp:[],sim:{}};save();render()}};
+ $('#view').onclick=null;
+}
+render();
+</script>
+</body>
+</html>
