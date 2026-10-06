@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>右腕ノート</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1d2330;--sub:#667085;--line:#e3e6ec;--accent:#2f6fed;--ok:#1a9d5c;--warn:#d9822b}
+@media (prefers-color-scheme:dark){:root{--bg:#14171d;--card:#1d222b;--text:#e8ebf1;--sub:#97a0b0;--line:#2c333f;--accent:#6a9bff;--ok:#43c386;--warn:#f0a050}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 "Yu Gothic UI","Meiryo",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:8px 0 12px}
+h2{font-size:15px;margin:0 0 8px;color:var(--sub)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+textarea,input,select{width:100%;font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
+textarea{min-height:110px;resize:vertical}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.item{border-top:1px solid var(--line);padding:10px 0}
+.item:first-child{border-top:0}
+.title{font-weight:600;word-break:break-word}
+.done .title{text-decoration:line-through;color:var(--sub)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center}
+.row input[type=text],.row input[type=date]{flex:1;min-width:140px;width:auto}
+.row select{width:auto}
+.tag{font-size:12px;color:var(--warn)}
+.today{border-left:4px solid var(--accent);padding-left:10px}
+.empty{color:var(--sub);font-size:14px}
+.foot{display:flex;gap:8px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<main>
+<h1>右腕ノート <span style="font-size:13px;color:var(--sub)">頭の中 → 整理 → 今日の3つ</span></h1>
+
+<section class="card">
+  <h2>① 頭の中を全部出す（1行 = 1つ。雑でOK）</h2>
+  <textarea id="dump" placeholder="例）&#10;見積書を送る&#10;母に電話&#10;新しい事業のアイデア&#10;税理士の返事待ち"></textarea>
+  <div class="row"><button class="primary" id="add">未整理に入れる</button></div>
+</section>
+
+<section class="card">
+  <h2>② 今日やる（最大3つ）</h2>
+  <div id="today"></div>
+</section>
+
+<section class="card">
+  <h2>③ 整理する</h2>
+  <div class="tabs" id="tabs"></div>
+  <div id="list"></div>
+</section>
+
+<section class="card foot">
+  <button id="export">バックアップ保存</button>
+  <button id="import">バックアップ読込</button>
+  <input type="file" id="file" accept="application/json" hidden>
+  <span class="empty">データはこのPCのブラウザ内だけに保存されます。</span>
+</section>
+</main>
+
+<script>
+const STATUS={inbox:'未整理',today:'今日',next:'次にやる',wait:'待ち',someday:'いつか',done:'完了'};
+const TABS=['inbox','next','wait','someday','done'];
+let items=[],tab='inbox';
+const KEY='migiude-note-v1';
+const $=id=>document.getElementById(id);
+function load(){try{items=JSON.parse(localStorage.getItem(KEY)||'[]')}catch(e){items=[]}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(items))}catch(e){}}
+function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+function itemHtml(it){
+  const opts=Object.keys(STATUS).map(k=>`<option value="${k}"${k===it.status?' selected':''}>${STATUS[k]}</option>`).join('');
+  const overdue=it.due&&it.status!=='done'&&it.due<new Date().toISOString().slice(0,10);
+  return `<div class="item ${it.status==='done'?'done':''}" data-id="${it.id}">
+    <div class="title">${esc(it.text)} ${overdue?'<span class="tag">期限切れ</span>':''}</div>
+    <div class="row">
+      <input type="text" data-f="next" placeholder="次の一手（最初の小さな行動）" value="${esc(it.next||'')}">
+      <input type="date" data-f="due" value="${esc(it.due||'')}">
+    </div>
+    <div class="row">
+      <select data-f="status">${opts}</select>
+      <button data-a="del">削除</button>
+    </div>
+  </div>`;
+}
+
+function render(){
+  const todays=items.filter(i=>i.status==='today');
+  $('today').innerHTML=todays.length?todays.map(i=>`<div class="today">${itemHtml(i)}</div>`).join('')
+    :'<div class="empty">まだありません。③で「今日」に選んでください。</div>';
+  $('tabs').innerHTML=TABS.map(t=>`<button data-t="${t}" class="${t===tab?'on':''}">${STATUS[t]} ${items.filter(i=>i.status===t).length}</button>`).join('');
+  const list=items.filter(i=>i.status===tab);
+  $('list').innerHTML=list.length?list.map(itemHtml).join(''):'<div class="empty">ここは空です。</div>';
+}
+
+function add(){
+  const lines=$('dump').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  lines.forEach(t=>items.unshift({id:uid(),text:t,status:'inbox',next:'',due:'',created:Date.now()}));
+  $('dump').value='';save();tab='inbox';render();
+}
+
+function onChange(e){
+  const row=e.target.closest('.item');if(!row)return;
+  const it=items.find(i=>i.id===row.dataset.id);const f=e.target.dataset.f;if(!it||!f)return;
+  if(f==='status'&&e.target.value==='today'&&items.filter(i=>i.status==='today'&&i.id!==it.id).length>=3){
+    alert('「今日」は3つまでです。先に1つ終わらせるか戻してください。');render();return}
+  it[f]=e.target.value;save();render();
+}
+
+$('add').onclick=add;
+document.body.addEventListener('change',onChange);
+document.body.addEventListener('click',e=>{
+  const t=e.target.dataset.t;if(t){tab=t;render();return}
+  if(e.target.dataset.a==='del'){
+    const id=e.target.closest('.item').dataset.id;
+    if(confirm('削除しますか？')){items=items.filter(i=>i.id!==id);save();render()}
+  }
+});
+$('export').onclick=()=>{
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(items,null,1)],{type:'application/json'}));
+  a.download='migiude-note-'+new Date().toISOString().slice(0,10)+'.json';a.click();
+};
+$('import').onclick=()=>$('file').click();
+$('file').onchange=e=>{
+  const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);if(Array.isArray(d)){items=d;save();render()}else alert('形式が違います')}catch(x){alert('読み込めません')}};
+  if(e.target.files[0])r.readAsText(e.target.files[0]);
+};
+load();render();
+</script>
+</body>
+</html>
