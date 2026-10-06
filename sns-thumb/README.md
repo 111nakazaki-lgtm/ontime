@@ -1,6 +1,6 @@
 # sns-thumb
 
-写真 + 一言 から、Instagram / Threads / X 用のサムネを書き出します。
+写真 + 一言 から、Instagram / Threads / X / note 用のサムネを書き出します。
 
 ## 毎日の流れ
 1. 携帯の写真を Google ドライブ等で同期し、`inbox/` に置く
@@ -11,6 +11,7 @@
 ## 出力サイズ
 - instagram / threads: 1080x1350
 - x: 1600x900
+- note(記事アイキャッチ): 1280x670
 
 ## 必要なもの
 - Python 3 と Pillow (`pip install pillow`)

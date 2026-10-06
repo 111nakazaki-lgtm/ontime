@@ -14,6 +14,7 @@ SIZES = {
     "instagram": (1080, 1350),
     "threads": (1080, 1350),
     "x": (1600, 900),
+    "note": (1280, 670),
 }
 FONT_CANDIDATES = [
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
