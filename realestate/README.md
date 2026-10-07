@@ -27,3 +27,6 @@
 ## テスト
 計算（ローン・耐用年数・和暦・地図座標）と登記判定、取り込みデータの無害化を自動検証します。
 `node realestate/tests/logic.test.js`（playwright と chromium が必要）
+
+## 既存の概要書PDFの一括変換
+`realestate/tools/` の変換ツールで、既存の概要書PDFを今の様式で作り直せます（元ファイルは変更せず、別フォルダに出力）。詳しくは `realestate/tools/README.md`。
