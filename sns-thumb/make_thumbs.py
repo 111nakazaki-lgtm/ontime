@@ -47,11 +47,12 @@ def wrap(draw, text, font, max_w):
     return lines
 
 
-def make(photo, text, sub, size, crop_left=0.0, crop_right=0.0):
+def make(photo, text, sub, size, crop_left=0.0, crop_right=0.0, crop_top=0.0, crop_bottom=0.0):
     w, h = size
     src = ImageOps.exif_transpose(Image.open(photo)).convert("RGB")
-    if crop_left or crop_right:
-        src = src.crop((int(src.width * crop_left), 0, int(src.width * (1 - crop_right)), src.height))
+    if crop_left or crop_right or crop_top or crop_bottom:
+        src = src.crop((int(src.width * crop_left), int(src.height * crop_top),
+                        int(src.width * (1 - crop_right)), int(src.height * (1 - crop_bottom))))
 
     portrait = h > w
     # 写真が目的の枠より縦長に近いときは、切らずに全体を載せて左右をぼかす
@@ -66,8 +67,12 @@ def make(photo, text, sub, size, crop_left=0.0, crop_right=0.0):
         # 背景はぼかした拡大写真。写真本体は切らずに幅いっぱいに載せ、下に文字の帯を作る
         img = ImageOps.fit(src, size).filter(ImageFilter.GaussianBlur(30))
         img = Image.blend(img, Image.new("RGB", size, (0, 0, 0)), 0.35)
+        max_h = int(h * 0.72)
         ph = int(src.height * w / src.width)
-        img.paste(src.resize((w, ph)), (0, int(h * 0.06)))
+        pw = w
+        if ph > max_h:  # 縦長の写真は高さに合わせて縮め、中央に置く
+            ph, pw = max_h, int(src.width * max_h / src.height)
+        img.paste(src.resize((pw, ph)), ((w - pw) // 2, int(h * 0.06)))
         fsize = int(w * 0.075)
     else:
         img = ImageOps.fit(src, size)
@@ -108,6 +113,8 @@ def main():
     ap.add_argument("text", help="画像に文字を入れない場合は空文字 \"\"")
     ap.add_argument("--sub", default="")
     ap.add_argument("--out", default="out")
+    ap.add_argument("--crop-top", type=float, default=0.0, help="上端を切り落とす割合")
+    ap.add_argument("--crop-bottom", type=float, default=0.0, help="下端を切り落とす割合")
     ap.add_argument("--crop-right", type=float, default=0.0, help="右端を切り落とす割合")
     ap.add_argument("--crop-left", type=float, default=0.0,
                     help="左端を切り落とす割合(0.12=左12%%。写り込んだ人物を除く用)")
@@ -117,7 +124,7 @@ def main():
     stem = Path(a.photo).stem
     for name, size in SIZES.items():
         path = out / f"{stem}_{name}.jpg"
-        make(a.photo, a.text, a.sub, size, a.crop_left, a.crop_right).save(path, quality=92)
+        make(a.photo, a.text, a.sub, size, a.crop_left, a.crop_right, a.crop_top, a.crop_bottom).save(path, quality=92)
         print(path)
 
 
