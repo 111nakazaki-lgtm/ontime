@@ -562,6 +562,7 @@ const SHEET_CSS=`.doc.sheet{background:#fff;color:#111;max-width:210mm;margin:0 
 .sheet table.k td{font-size:8.5pt;padding:2.5px 7px}.sheet td.n{text-align:right;white-space:nowrap}.sheet td.c{text-align:center}.sheet td.neg{font-weight:700}.sheet td.base{font-weight:800;outline:2px solid #111;outline-offset:-2px}
 .sheet table.k.t5 th{text-align:center;font-size:7.5pt;white-space:nowrap;padding:2.5px 4px}.sheet table.k.t5 td{padding:2.5px 5px;font-size:8pt}
 .sheet .chart{border:1px solid #999;border-top:0;padding:4px 6px}.sheet .obs p{margin:0 0 3px}.sheet .obs .tag{display:inline-block;border:1px solid #111;font-size:7pt;font-weight:700;padding:0 5px;margin-right:4px;min-width:3em;text-align:center}
+.sheet .subject{border:1px solid #999;display:flex;align-items:center;gap:12px;margin-top:0;padding:5px 10px}.sheet .subject span{background:#efefef;font-weight:700;font-size:7.5pt;padding:2px 9px;border:1px solid #999}.sheet .subject b{font-size:12pt}
 .sheet .notes{border:1px solid #999;padding:4px 8px;margin-top:6px;font-size:7pt;color:#444}
 @media(max-width:700px){.doc.sheet{padding:6px;font-size:8pt}.sheet .pricebox .big{font-size:17pt}}
 `;
@@ -656,7 +657,7 @@ function invModel(D){
 const manY=v=>{if(!isFinite(v))return '-';const m=Math.round(Math.abs(v)/1e4);return (v<0&&m>0?'▲':'')+m.toLocaleString('ja-JP')+'万'};
 const yenN=v=>isFinite(v)?(v<0?'▲':'')+Math.round(Math.abs(v)).toLocaleString('ja-JP')+'円':'-';
 function toshiChart(M){
- const W=330,H=150,L=44,R=8,T=10,B=22,ys=[M.rows.map(r=>r.cum),M.rows.map(r=>r.total)].flat().concat([-M.equity,0]),mn=Math.min(...ys),mx=Math.max(...ys),h=M.hold;
+ const W=330,H=205,L=44,R=8,T=10,B=22,ys=[M.rows.map(r=>r.cum),M.rows.map(r=>r.total)].flat().concat([-M.equity,0]),mn=Math.min(...ys),mx=Math.max(...ys),h=M.hold;
  const x=y=>L+(W-L-R)*y/h,yy=v=>T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));
  const line=(arr,dash)=>`<path d="${arr.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+yy(v).toFixed(1)).join('')}" fill="none" stroke="${dash?'#777':'#111'}" stroke-width="${dash?1.6:2.2}" ${dash?'stroke-dasharray="5 3"':''}/>`;
  const c=[-M.equity,...M.rows.map(r=>r.cum)],t=[-M.equity,...M.rows.map(r=>r.total)];
@@ -672,9 +673,7 @@ function docToshi(p){
  ensure(p);const D=invInput(p),M=invModel(D),iss=S.issuer||{},L=lifeInfo(p),td=new Date();
  const yyyymmdd=td.getFullYear()+String(td.getMonth()+1).padStart(2,'0')+String(td.getDate()).padStart(2,'0');
  const no='I-'+yyyymmdd+'-'+String(p.id).replace(/[^A-Za-z0-9]/g,'').toUpperCase().slice(-6);
- const r=p.reg,d=p.det,lot=(r.land.place||'').replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/,'')+(r.land.lot||'');
- const transit=(d.transit||(p.station?p.station+'駅':''))+(p.station||d.transit?(p.walk?'　徒歩'+esc(p.walk)+'分':''):'');
- const ok=!!(iss.company||iss.name);
+  const ok=!!(iss.company||iss.name);
  const tr=(k,v,b)=>`<tr><th>${k}</th><td class="n">${b?`<b>${v}</b>`:v}</td></tr>`;
  const rates=[D.rate,D.rate+0.5,D.rate+1,D.rate+2],vacs=[...new Set([0,D.vac,10,20,30])].sort((a,b)=>a-b);
  const yrsSel=[...new Set([1,3,5,10,15,20,25,30].filter(y=>y<M.hold).concat([M.hold]))].slice(-6);
@@ -692,11 +691,7 @@ function docToshi(p){
  if(isFinite(M.ccr)&&M.cf>=0&&M.ccr<0.03)add('確認',`自己資金利回り(CCR) ${pct(M.ccr)}（目安 3%以上）`);
  if(!it.some(x=>x[0]!=='良好'))add('良好','指標面で突出した懸念は検出されません');
  return `<div class="hd"><div class="l">${iss.company?`<span class="co">${esc(iss.company)}</span><span class="vbar"></span>`:''}<h1>投 資 分 析 書</h1></div><div class="r">${esc(no)}<small>作成日：${ymd()}</small></div></div>
- <div class="grp">${'<table class="r"><tr><th>物件名</th><td colspan="3"><b style="font-size:12pt">'+esc(p.name)+'</b></td></tr></table>'}
- <table class="r"><tr><th>所在地</th><td>${esc(p.address)}</td><th>地番</th><td>${esc(lot)}</td></tr></table>
- <table class="r"><tr><th>交通</th><td colspan="3">${transit||'&nbsp;'}</td></tr></table></div>
- <div class="pricebox"><div class="k">購入価格</div><div class="v"><div class="big">${p.price>0?p.price.toLocaleString('ja-JP'):'-'}<small>円</small>${jpMoney(p.price)?`<i>（${jpMoney(p.price)}）</i>`:''}</div>
- <div class="sub">${d.occupancy?`<span class="badge">${esc(d.occupancy)}</span>`:''}表面利回り ${pct(M.gross)}　｜　実質利回り ${pct(M.cap)}　｜　年間CF ${yenN(M.cf)}　｜　IRR(${M.hold}年) ${isFinite(M.irr)?pct(M.irr):'-'}</div></div></div>
+ <div class="subject"><span>対象物件</span><b>${esc(p.name)}</b></div>
  <div class="cols2"><div><div class="band">購入条件・資金計画</div><table class="k">
  ${tr('購入価格',yenN(M.price))}${tr('購入諸費用（'+D.cost+'%）',yenN(M.cost))}${tr('総投資額',yenN(M.total),1)}${tr('借入額（LTV '+pct(M.ltv)+'）',yenN(M.loan))}${tr('自己資金（頭金+諸費用）',yenN(M.equity),1)}
  ${tr('金利・返済期間','年'+D.rate+'% ／ '+M.yL+'年（元利均等）')}${tr('月々の返済額',yenN(M.mp))}</table></div>
