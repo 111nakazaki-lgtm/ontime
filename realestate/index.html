@@ -466,7 +466,7 @@ function svgPhoto(title,sub,c1,c2,kind){
  if(kind==='plan')b=`<rect x="120" y="90" width="560" height="330" fill="#fff" stroke="#334" stroke-width="6"/><line x1="400" y1="90" x2="400" y2="270" stroke="#334" stroke-width="4"/><line x1="120" y1="270" x2="680" y2="270" stroke="#334" stroke-width="4"/><line x1="470" y1="270" x2="470" y2="420" stroke="#334" stroke-width="4"/><text x="250" y="190" font-size="26" fill="#334">LDK</text><text x="520" y="190" font-size="26" fill="#334">洋室</text><text x="250" y="355" font-size="26" fill="#334">水廻り</text><text x="540" y="355" font-size="26" fill="#334">収納</text>`;
  else{let w='';for(let r=0;r<4;r++)for(let c=0;c<5;c++)w+=`<rect x="${250+c*62}" y="${130+r*62}" width="36" height="40" fill="#cfe8ff" stroke="#456" stroke-width="2"/>`;
   b=`<rect x="0" y="400" width="800" height="100" fill="#8aa17a"/><rect x="230" y="90" width="340" height="320" fill="#f5efe6" stroke="#456" stroke-width="4"/>${w}<rect x="375" y="330" width="50" height="80" fill="#8a5a3a"/><circle cx="640" cy="120" r="40" fill="#ffe28a"/>`}
- const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/>${b}<text x="20" y="40" font-size="28" font-family="sans-serif" fill="#123" font-weight="700">${title}</text><text x="20" y="480" font-size="22" font-family="sans-serif" fill="#123">${sub}</text></svg>`;
+ const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/>${b}<text x="20" y="78" font-size="28" font-family="sans-serif" fill="#123" font-weight="700">${title}</text><text x="20" y="432" font-size="22" font-family="sans-serif" fill="#123">${sub}</text></svg>`;
  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)}
 const SAMPLE_G={
  s0:{geo:{lat:'35.6580',lng:'139.7016',zoom:'16',layer:'std'},photos:[{src:svgPhoto('(サンプル)外観','イメージ図','#9fd0ff','#e8f4ff','ext'),cap:'外観'},{src:svgPhoto('(サンプル)間取り','1LDK 42.5㎡','#fff3d6','#ffe3a8','plan'),cap:'間取り図'}]},
@@ -478,13 +478,13 @@ function tileXY(lat,lng,z){const n=Math.pow(2,z),r=lat*Math.PI/180;return {x:(ln
 function mapHTML(p){
  const g=p.geo||GEO_DEF,lat=parseFloat(g.lat),lng=parseFloat(g.lng),z=Math.min(18,Math.max(10,parseInt(g.zoom)||16));
  if(!isFinite(lat)||!isFinite(lng)||Math.abs(lat)>85||Math.abs(lng)>180)return `<div class="ph-empty">位置情報が未設定です(「地図・写真」で住所検索または緯度経度を入力)</div>`;
- const [ln,ext]=LAYERS[g.layer]||LAYERS.std,key=LAYERS[g.layer]?g.layer:'std',W=768,H=336,c=tileXY(lat,lng,z);
+ const [ln,ext]=LAYERS[g.layer]||LAYERS.std,key=LAYERS[g.layer]?g.layer:'std',W=768,H=240,c=tileXY(lat,lng,z);
  const x0=Math.floor(c.x-W/2/256),x1=Math.floor(c.x+W/2/256),y0=Math.floor(c.y-H/2/256),y1=Math.floor(c.y+H/2/256),n=Math.pow(2,z);let t='';
  for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){if(ty<0||ty>=n)continue;const px=W/2+(tx-c.x)*256,py=H/2+(ty-c.y)*256,xx=((tx%n)+n)%n;
-  t+=`<img alt="" loading="lazy" src="https://cyberjapandata.gsi.go.jp/xyz/${key}/${z}/${xx}/${ty}.${ext}" style="left:${(px/W*100).toFixed(4)}%;top:${(py/H*100).toFixed(4)}%;width:${(256/W*100).toFixed(4)}%;height:${(256/H*100).toFixed(4)}%">`}
+  t+=`<img alt="" onerror="this.remove()" src="https://cyberjapandata.gsi.go.jp/xyz/${key}/${z}/${xx}/${ty}.${ext}" style="left:${(px/W*100).toFixed(4)}%;top:${(py/H*100).toFixed(4)}%;width:${(256/W*100).toFixed(4)}%;height:${(256/H*100).toFixed(4)}%">`}
  const scale={14:'約1:35,000',15:'約1:17,000',16:'約1:8,500',17:'約1:4,300',18:'約1:2,100'}[z]||'';
- return `<div class="mapbox" style="aspect-ratio:${W}/${H}"><span class="mapoff">地図を読み込めません(オフライン時は表示されません)</span>${t}<i class="pin"></i></div>
- <div class="mapcap">${esc(ln)}　緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}　${scale}　出典:国土地理院タイル</div>`}
+ return `<div class="mapwrap"><div class="mapbox" style="aspect-ratio:${W}/${H}"><span class="mapoff">地図を読み込めません(オフライン時は表示されません)</span>${t}<i class="pin"></i></div>
+ <div class="mapcap">${esc(ln)}　緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}　${scale}　出典:国土地理院タイル</div></div>`}
 function photosHTML(p){
  const ph=(p.photos||[]).filter(x=>safeImg(x.src));
  if(!ph.length)return `<div class="ph-empty">写真が未登録です(「地図・写真」から追加)</div>`;
@@ -507,8 +507,8 @@ const MAP_CSS=`
 .doc .mapoff{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#667;font-size:12px}
 .doc .pin{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-22px 0 0 -11px;background:#e53935;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 1px 5px rgba(0,0,0,.5);z-index:2}.doc .pin::after{content:"";position:absolute;left:4px;top:4px;width:6px;height:6px;background:#fff;border-radius:50%}
 .doc .mapcap{font-size:11px;color:#556;margin-top:3px}
-.doc .ph-main{position:relative;border-radius:8px;overflow:hidden;border:1px solid #889;background:#000}.doc .ph-main img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#111}.doc .ph-main .cap{position:absolute;left:0;bottom:0;right:0;background:rgba(0,0,0,.55);color:#fff;padding:3px 10px;font-size:12px}
-.doc .ph-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}.doc .ph-grid figure{margin:0;page-break-inside:avoid}.doc .ph-grid img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border:1px solid #889;border-radius:6px}.doc .ph-grid figcaption{font-size:11px;text-align:center;color:#334}
+.doc .ph-main,.doc .mapwrap{break-inside:avoid}.doc .ph-main{position:relative;border-radius:8px;overflow:hidden;border:1px solid #889;background:#000}.doc .ph-main img{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;background:#111}.doc .ph-main .cap{position:absolute;left:0;bottom:0;right:0;background:rgba(0,0,0,.55);color:#fff;padding:3px 10px;font-size:12px}
+.doc .ph-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}.doc .ph-grid figure{margin:0;page-break-inside:avoid}.doc .ph-grid img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border:1px solid #889;border-radius:6px}.doc .ph-grid figcaption{font-size:11px;text-align:center;color:#334}
 .doc .ph-empty{border:2px dashed #99a;border-radius:8px;padding:22px;text-align:center;color:#667;font-size:12px}
 .doc.gaiyo h2.c9{background:#e07b1a}.doc.gaiyo h2.c10{background:#0f8b9d}
 .thumb{width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
