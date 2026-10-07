@@ -144,10 +144,10 @@ function toast(m){const d=document.createElement('div');d.textContent=m;d.style.
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
 
 /* ---------- ナビ ---------- */
-const TABS=[['dash','ダッシュボード'],['list','物件検索'],['pipe','進捗管理'],['cmp','比較'],['sim','収支シミュレーター'],['doc','概要書・登記分析'],['data','データ']];
+const TABS=[['dash','ダッシュボード'],['list','物件検索'],['pipe','進捗管理'],['cmp','比較'],['sim','収支シミュレーター'],['doc','概要書・登記分析'],['conv','概要書の変換'],['data','データ']];
 function renderNav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${k===tab?'on':''}">${l}${k==='cmp'&&S.cmp.length?` (${S.cmp.length})`:''}</button>`).join('')}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(b){tab=b.dataset.t;render()}};
-function render(){flushSave();$('#view').onclick=null;$('#view').oninput=null;$('#view').onchange=null;renderNav();({dash,list,pipe,cmp,sim,doc:docTab,data})[tab]();window.scrollTo(0,0)}
+function render(){flushSave();$('#view').onclick=null;$('#view').oninput=null;$('#view').onchange=null;renderNav();({dash,list,pipe,cmp,sim,doc:docTab,conv:convTab,data})[tab]();window.scrollTo(0,0)}
 const V=h=>{$('#view').innerHTML=h};
 
 /* ---------- ダッシュボード ---------- */
@@ -803,6 +803,405 @@ function docTab(){
   else if(b.dataset.del){const [l,i]=b.dataset.del.split(':');q.reg[l].splice(+i,1);save();openSec[l]=true;docTab()}
   else if(b.id==='pr')window.print();
   else if(b.id==='dh'){const n=({gaiyo:'物件概要書_',toshi:'投資分析書_',touki:'登記分析書_'})[docKind]+q.name;download(n+'.html',`<!doctype html><html lang="ja"><meta charset="utf-8"><title>${esc(n)}</title><style>body{margin:20px;font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}${DOC_CSS}${st.textContent}</style><body>${$('#doc').outerHTML}</body></html>`,'text/html')}};
+}
+
+/* ---------- 概要書の一括変換（旧い物件概要書PDF → 現在の様式） ---------- */
+const CV={
+ LABELS:['物件名','所在地','地番','交通','価格','権利','地目','公簿面積','接道','種類','構造','築年月','延床面積','専有面積','総戸数','間取り','総階数','EV','家屋番号','検査済証','満室想定賃料','現況賃料','稼働率','満室想定利回り','表面利回り','実質利回り','用途地域','建蔽率','容積率','防火指定','高度地区'],
+ SECTIONS:['土地','建物','収益情報','法規制','特記事項','取引条件'],
+ MAPBAND:['地図','写真・地図','写真地図'],
+ DISCLAIMER:/^※\s*(本資料は参考情報|記載内容は調査時点)/,
+ ERA:{令和:2018,平成:1988,昭和:1925,大正:1911,明治:1867},
+ STRUCT:[['鉄骨鉄筋','鉄骨鉄筋コンクリート造'],['SRC','鉄骨鉄筋コンクリート造'],['鉄筋コンクリート','鉄筋コンクリート造'],['RC','鉄筋コンクリート造'],['軽量鉄骨','軽量鉄骨造(厚3mm超4mm以下)'],['S造','鉄骨造(厚4mm超)'],['鉄骨造','鉄骨造(厚4mm超)'],['木造','木造']],
+ LLABELS:['物件種別','エリア','所在地','交通','延床面積','専有面積','用途','構造','規模','構造・規模','築年月','現況','土地面積','土地権利','地目','接道状況','バルコニー面積','間取り','所在階','総戸数','管理形態','売出価格','税区分','坪単価','取引態様','引渡し','価格条件','管理費','修繕積立金','現況賃料(年)','表面利回り','都市計画','用途地域','建ぺい率','容積率','その他制限'],
+ LSECTIONS:['物件基本情報','建物情報','敷地情報','価格・取引情報','収益情報','法令制限','備考・特記事項'],
+ LNOTE:/^(※\s*本書の内容|CO\s*N\s*F\s*I\s*D\s*E\s*N\s*T\s*I\s*A\s*L)/,
+ MAXPX:1000
+};
+const cvNorm=t=>t.replace(/[\s　]+/g,'');
+const cvNum=(t,d=0)=>{const m=/-?[\d,]+(?:\.\d+)?/.exec(t||'');return m?parseFloat(m[0].replace(/,/g,'')):d};
+function cvCluster(lines){
+ lines=lines.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+ const rows=[];let cur=[],last=null;
+ for(const l of lines){if(last!==null&&l[0]-last>6){rows.push(cur);cur=[]}cur.push(l);last=l[0]}
+ if(cur.length)rows.push(cur);
+ return rows.flatMap(r=>r.slice().sort((a,b)=>a[1]-b[1]||a[0]-b[0]));
+}
+/* PDF.js のテキストを「行」にまとめる。[y(上端), x, 文字列]。表のセルの間（大きな空き）は別の行に分ける */
+async function cvPdfLines(pdf){
+ const out=[];
+ for(let pi=0;pi<pdf.numPages;pi++){
+  const pg=await pdf.getPage(pi+1),vp=pg.getViewport({scale:1}),tc=await pg.getTextContent();
+  let cur=null;const rows=[];
+  const flush=()=>{if(cur){const t=cur.s.trim();if(t)rows.push({y:cur.top+pi*10000,x:cur.x,end:cur.end,t,single:[...t].length===1})}cur=null};
+  for(const it of tc.items){
+   if(it.str===undefined)continue;
+   if(it.hasEOL&&!it.str.trim()){flush();continue}
+   if(!it.str.trim())continue;  // PDF.js が空きの代わりに入れる空白は、位置の差から自分で判断する
+   const h=Math.hypot(it.transform[2],it.transform[3])||it.height||1,x=it.transform[4],y=vp.height-it.transform[5];
+   if(cur){
+    const gap=x-cur.end,same=Math.abs(y-cur.y)<Math.max(h,cur.h)*.3||Math.abs(y-cur.y)<2;
+    if(same&&gap>-h*.3&&gap<=Math.max(2,cur.lh*1.25)){
+     const mn=Math.min(h,cur.lh);cur.s+=(gap>mn*.5?'\u3000':gap>mn*.15?' ':'')+it.str;cur.end=x+it.width;cur.lh=h;cur.h=Math.max(cur.h,h);cur.top=Math.min(cur.top,y-h*.88);continue;
+    }
+    flush();
+   }
+   cur={s:it.str,x,y,end:x+it.width,h,lh:h,top:y-h*.88};
+  }
+  flush();
+  // 文字の間隔を広げた見出し（土 地・写 真 ・ 地 図 など）は、1文字ずつに分かれるので1つにつなぐ
+  for(let i=0;i<rows.length;){
+   let j=i;while(rows[i].single&&j+1<rows.length&&rows[j+1].single&&Math.abs(rows[j+1].y-rows[i].y)<3&&rows[j+1].x>rows[j].x)j++;
+   if(j>i){out.push([rows[i].y,rows[i].x,rows.slice(i,j+1).map(r=>r.t).join('\u3000')]);i=j+1}else{out.push([rows[i].y,rows[i].x,rows[i].t]);i++}
+  }
+ }
+ return out;
+}
+function cvParseLegacy(toks){
+ const texts=toks.map(t=>t[2]),m={legacy:true,hasBuilding:true},warn=[];
+ const ti=texts.findIndex(t=>cvNorm(t).includes('物件概要書'));
+ const head=texts.slice(0,ti),tail=texts.slice(ti+1);
+ m.name=tail.find(t=>!t.startsWith('■'))||'';
+ const iss={company:'',role:'',name:'',tel:'',email:'',office:''};
+ for(const t of head){
+  if(/Mobile|Tel/.test(t))iss.tel=t.replace(/^(Mobile|Tel)[：:]\s*/,'').trim();
+  else if(t.includes('@'))iss.email=t.trim();
+  else if(!iss.company&&/株式会社|Inc/.test(t))iss.company=t;
+  else if(!iss.name&&iss.company&&t!==iss.company)iss.name=t;
+ }
+ m.issuer=iss;
+ const vals={},notes=[];let cur=null,section=null;
+ for(const [y,x,t] of toks.slice(ti+1)){
+  const n=cvNorm(t);
+  if(CV.LSECTIONS.includes(n)){section=n;cur=null;continue}
+  if(CV.LNOTE.test(t)){cur=null;section='終了';continue}
+  if(section==='備考・特記事項'){notes.push(t);continue}
+  if(CV.LLABELS.includes(t)){cur=t;vals[cur]=vals[cur]||[];continue}
+  if(cur!==null&&section!=='終了')vals[cur].push(t);
+ }
+ const g=k=>(vals[k]||[]).join(' ').trim();
+ const val=k=>{const v=g(k);return ['-','ー','－'].includes(v)?'':v};
+ m.kind=val('物件種別');m.address=val('所在地');m.transit=val('交通').replace(/駅駅/g,'駅');
+ m.floorArea=val('延床面積')||val('専有面積');m.landArea=val('土地面積');
+ m.struct=val('構造')||val('構造・規模');m.stories=val('規模')||val('所在階');
+ m.built=val('築年月');m.right=val('土地権利');m.category=val('地目');m.access=val('接道状況');
+ m.units=val('総戸数');m.dealType=val('取引態様');m.delivery=val('引渡し');m.zoning=val('用途地域');
+ if(val('建ぺい率'))m.coverage=val('建ぺい率').replace('%','').trim();
+ if(val('容積率'))m.far=val('容積率').replace('%','').trim();
+ m.curRent=val('現況賃料(年)');if(m.curRent)m.hasIncome=true;
+ if(val('表面利回り'))m.grossText=val('表面利回り');
+ const pv=val('売出価格'),pm=pv?/^([\d,.]+)\s*(億)?\s*([\d,]*)\s*(万)?円/.exec(pv):null;
+ if(pv&&/^[\d,]+円$/.test(pv))m.price=parseInt(pv.replace(/\D/g,''),10);
+ else if(pv&&pm)m.price=Math.round(parseFloat(pm[1].replace(/,/g,''))*(pm[2]?1e8:(pm[4]?1e4:1))+(pm[3]?parseFloat(pm[3].replace(/,/g,'')||0)*1e4:0));
+ else m.priceNote='価格要相談';
+ const other=val('その他制限');
+ m.special=(notes.join('')+(other?'\n'+other:'')).trim();
+ m.noPhotoText='';
+ for(const k of ['name','address'])if(!m[k])warn.push('必須項目を読み取れません: '+k);
+ return [m,warn];
+}
+function cvParse(lines){
+ const toks=cvCluster(lines),texts=toks.map(t=>t[2]),m={},warn=[];
+ if(!texts.slice(0,12).some(t=>cvNorm(t).includes('物件概要書')))return [null,['概要書の様式ではありません']];
+ if(texts.some(t=>cvNorm(t)==='物件基本情報'))return cvParseLegacy(toks);
+ for(const t of texts.slice(0,8)){
+  if(/^[A-Za-z]-\d{8}-\w+$/.test(t))m.docNo=t;
+  const d=/作成日[：:]\s*(\d{4})年(\d{1,2})月(\d{1,2})日/.exec(t);
+  if(d)m.docDate=d[1]+'-'+d[2].padStart(2,'0')+'-'+d[3].padStart(2,'0');
+ }
+ for(let i=0;i<toks.length;i++){
+  const t=toks[i][2],pm=/^([\d,]+)\s*円\s*[（(](.*?)[）)]?$/.exec(t);
+  if(pm){m.price=parseInt(pm[1].replace(/,/g,''),10);m.priceText=pm[2];toks.splice(i,1);break}
+  if(/^価格\s*(要相談|未定|応相談|相談)/.test(t)){m.priceNote=t.replace(/ /g,'');toks.splice(i,1);break}
+ }
+ const foot=toks.findIndex(([,,t])=>t.includes('｜')&&/Expert|Tel|Inc|株式会社/.test(t));
+ const footer=foot>=0?toks.slice(foot):[],body=foot>=0?toks.slice(0,foot):toks;
+ const vals={},bullets=[],mapnote=[];let cur=null,section=null,mapHead=false;
+ for(const [y,x,t] of body){
+  const n=cvNorm(t),isMap=CV.MAPBAND.some(b=>n.startsWith(b));
+  if(CV.SECTIONS.includes(n)||isMap){
+   section=isMap?'地図':n;cur=null;mapHead=isMap;
+   if(section==='収益情報')m.hasIncome=true;
+   if(section==='建物')m.hasBuilding=true;
+   continue;
+  }
+  if(section==='特記事項'&&(t.startsWith('・')||bullets.length)){bullets.push(t);continue}
+  if(section==='地図'){
+   if(mapHead){mapHead=false;if(/^[（(]/.test(t))continue}  // 見出しの住所が別の行に分かれたとき
+   if(/^写真は.*(ご案内|準備|未登録)/.test(t))m.noPhotoText=t;
+   else if(!CV.DISCLAIMER.test(t))mapnote.push(t);
+   continue;
+  }
+  if(CV.LABELS.includes(t)){cur=t;vals[cur]=vals[cur]||[];continue}
+  if(cur&&!CV.DISCLAIMER.test(t))vals[cur].push(t);
+ }
+ const v=k=>(vals[k]||[]).join(' ').trim();
+ const nm=(vals['物件名']||[''])[0],sp=/^(.*)　([^　]+)$/.exec(nm);
+ m.name=sp&&/[都道府県市区町村郡]/.test(sp[2])&&sp[2].length<=24?sp[1].trim():nm;
+ for(const t of vals['価格']||[]){
+  if(t.includes('表面利回り')||t.includes('引渡時期')){
+   const g=/表面利回り\s*([^\s｜　]+)/.exec(t),n_=/実質利回り\s*([^\s｜　（]+(?:（[^）]*）)?)/.exec(t),dl=/引渡時期[：:]\s*(\S+)/.exec(t);
+   if(g)m.grossText=g[1];if(n_)m.netText=n_[1];if(dl)m.delivery=dl[1];
+   const pre=t.split(/表面利回り|引渡時期/)[0].trim();
+   if(pre&&pre.length<=12&&!('badge' in m))m.badge=pre;
+  }else if(t.length<=12&&!('badge' in m))m.badge=t;
+ }
+ for(const [a,b] of [['所在地','address'],['地番','lot'],['権利','right'],['地目','category'],['種類','kind'],['家屋番号','bldgNo'],['検査済証','inspection'],['EV','elevator'],['総戸数','units'],['総階数','stories'],['用途地域','zoning'],['防火指定','fire'],['高度地区','heightDistrict'],['間取り','layout'],['稼働率','occRate']])if(v(a))m[b]=v(a);
+ for(const k of ['建蔽率','容積率'])if(v(k))m[k==='建蔽率'?'coverage':'far']=v(k).replace('%','').trim();
+ m.stories=(vals['総階数']||[]).join('')||m.stories||'';
+ m.transit=v('交通');m.access=v('接道');m.struct=v('構造');m.built=v('築年月');
+ m.landArea=v('公簿面積');m.floorArea=v('延床面積')||v('専有面積');
+ m.fullRent=v('満室想定賃料');m.curRent=v('現況賃料');
+ m.rentLabelsSeen=!!((vals['満室想定賃料']||[]).length||(vals['現況賃料']||[]).length||(vals['満室想定利回り']||[]).length);
+ const nv=vals['実質利回り']||[];
+ if(nv.length){
+  if(!('netText' in m))m.netText=nv[0];
+  const nt=nv.slice(1).filter(t=>t.startsWith('※'));if(nt.length)m.netNote=nt.join(' ');
+ }
+ if((vals['表面利回り']||[]).length&&!('grossText' in m))m.grossText=vals['表面利回り'][0];
+ const items=[];
+ for(const b of bullets)for(let part of b.split(/・\s*(?=[①-⑳])/)){
+  part=part.trim().replace(/^・?\s*[①-⑳\d]+[.．)]?\s*/,'');
+  if(part&&!/^本資料は参考情報です/.test(part))items.push(part);
+ }
+ m.special=items.join('\n').replace(/\u3000/g,'  ');m.photoNote=mapnote.join(' ').replace(/ +(?=[\x21-\x7e、）Ⅰ-Ⅲ])|(?<=[\x21-\x7e（、Ⅰ-Ⅲ]) +/g,'').trim();
+ const ft=footer.filter(f=>!CV.DISCLAIMER.test(f[2])).map(f=>f[2]).join(' ');
+ const iss={company:'',role:'',name:'',tel:'',email:'',office:''};
+ for(const p of ft.split(/[｜|]/).map(s=>s.trim()).filter(Boolean)){
+  if(p.startsWith('Tel'))iss.tel=p.replace(/^Tel[：:]\s*/,'');
+  else if(p.startsWith('Email'))iss.email=p.replace(/^Email[：:]\s*/,'').split(/\s/)[0];
+  else if(p.includes('Expert')){iss.role='Expert Agent';const rest=p.replace(/.*Expert Agent\s*/,'').trim();if(rest)iss.name=rest}
+  else if(!iss.company)iss.company=p;
+  else if(!iss.name&&!/[:：]/.test(p))iss.name=p;
+ }
+ const o=/事務所[：:]\s*(.+?)(?=\s+取引態様|$)/.exec(ft),dl=/取引態様[：:]\s*(\S+)/.exec(ft);
+ if(o)iss.office=o[1].trim();if(dl)m.dealType=dl[1];
+ m.issuer=iss;
+ for(const k of ['name','address'])if(!m[k])warn.push('必須項目を読み取れません: '+k);
+ if(!m.price&&!m.priceNote)warn.push('必須項目を読み取れません: price');
+ return [m,warn];
+}
+const cvUnknown=v=>!v||['要確認','不明','-','ー'].includes(v);
+function cvEra(s){const mm=/(令和|平成|昭和|大正|明治)(元|\d+)年/.exec(s);return mm?CV.ERA[mm[1]]+(mm[2]==='元'?1:+mm[2]):null}
+function cvType(kind){
+ const k=kind||'';
+ if(k.includes('土地')&&!k.includes('建'))return '土地';
+ if(/戸建|一戸建|テラスハウス/.test(k))return '一戸建て';
+ if(k.includes('一棟')||k.includes('棟'))return /ビル|店舗|事務所|倉庫|工場|ホテル/.test(k)?'ビル・店舗':'アパート';
+ if(/区分|マンション/.test(k))return 'マンション';
+ return k.includes('共同')||k.includes('レジデンス')?'アパート':'マンション';
+}
+function cvProp(m,photo,mapImg){
+ const kind=m.kind||'',ptype=(kind||m.hasBuilding)?cvType(kind):'土地',st=m.struct||'';
+ const sf=CV.STRUCT.find(([k])=>st.includes(k)),struct=sf?sf[1]:(st?st.split(/[（(\s　]/)[0]:'');
+ const rf=st.match(/(陸屋根|切妻屋根|寄棟屋根|片流れ屋根|瓦屋根|スレート屋根|折板屋根|屋根)/g),roof=rf?rf[rf.length-1]:'';
+ const tr=m.transit||'',wm=/徒歩\s*(\d+)\s*分/.exec(tr),sm=/[「『](.+?)[」』]\s*駅/.exec(tr)||/([^\s「」・]+?)駅/.exec(tr);
+ let built='';const bt=m.built||'',ym=/(\d{4})年/.exec(bt),mo=/年\s*(\d{1,2})月/.exec(bt),yr=ym?+ym[1]:cvEra(bt),am=/築\s*(\d+)\s*年/.exec(bt);
+ if(yr)built=String(yr).padStart(4,'0')+'-'+String(mo?+mo[1]:1).padStart(2,'0')+'-01';
+ const landA=cvNum(m.landArea),floorA=cvNum(m.floorArea),stt=m.stories||'';
+ const above=/地上\s*(\d+)/.exec(stt),below=/地下\s*(\d+)/.exec(stt),access=m.access||'';
+ const road={roadDir:'',roadKind:'',roadWidth:''};
+ if(access&&!cvUnknown(access)){
+  const w=/幅員\s*([\d.]+)/.exec(access);road.roadWidth=w?w[1]:'';
+  let parts=access.split(/[\s　]+/).filter(p=>p&&!p.startsWith('幅員')&&!/^[\d.]+m?$/.test(p));
+  if(parts.length&&parts[0].length<=2){road.roadDir=parts[0];parts=parts.slice(1)}
+  road.roadKind=parts.join(' ');
+ }else if(access)road.roadKind=access;
+ const curRent=m.legacy?0:cvNum(m.curRent),fullRent=cvNum(m.fullRent);
+ const det={docNo:m.docNo||'',docDate:m.docDate||'',transit:tr.replace(/[\s　]*徒歩.*$/,'').trim(),rightType:m.right||'',zoning:m.zoning||'',coverage:m.coverage||'',far:m.far||'',
+  fire:m.fire||'',heightDistrict:m.heightDistrict||'',elevator:m.elevator||'',inspection:m.inspection||'',units:m.units||'',roof,delivery:m.delivery||'',
+  occupancy:m.badge||'',special:m.special||'',photoNote:m.photoNote||'',dealType:m.dealType||'',grossText:m.grossText||'',netText:m.netText||'',netNote:m.netNote||'',
+  occupancyRate:(m.occRate||'').replace('%','').trim(),currentRent:curRent?String(Math.trunc(curRent)):'',
+  builtText:built?'':(bt&&!am?bt:''),priceNote:m.priceNote||'',priceText:m.priceText||'',showIncome:m.hasIncome?'1':'',
+  fullRentText:m.fullRent||'',currentRentText:(m.legacy&&m.curRent)?m.curRent+'（年額）':(m.curRent||''),noPhotoText:m.noPhotoText||'',
+  noAuto:'1',noFullRent:fullRent?'':((curRent||m.legacy)?'1':''),...road};
+ if(above){det.floorsAbove=above[1];det.floorsBelow=below?below[1]:''}else det.stories=stt;
+ const p={id:(m.docNo||'').replace(/[^A-Za-z0-9_-]/g,'')||'conv',name:m.name,address:m.address||'',station:sm?sm[1]:'',walk:wm?+wm[1]:0,type:ptype,
+  purpose:(fullRent||curRent||m.grossText)?'投資':'居住',status:'検討中',price:m.price||0,rent:fullRent||curRent,area:ptype==='土地'?landA:floorA,
+  layout:m.layout||'',age:am?+am[1]:0,mgmt:0,tax:0,note:'',det,
+  reg:{acquired:'',joint:'',land:{place:'',lot:m.lot||'',category:m.category||'',area:landA?String(landA):(m.landArea||'')},
+   bldg:{place:'',no:m.bldgNo||'',kind,struct,floorArea:floorA?String(floorA):(m.floorArea||''),built},kou:[],otsu:[]}};
+ if(photo)p.photos=[{src:photo,cap:''}];
+ if(mapImg)p.mapImg=mapImg;
+ return p;
+}
+/* 画像（写真・地図）の取り出し：ページ上の位置から、左=写真・右=地図に振り分ける */
+async function cvImages(pdf){
+ const pg=await pdf.getPage(1),vp=pg.getViewport({scale:1}),W=vp.width,OPS=pdfjsLib.OPS;
+ const ol=await pg.getOperatorList(),st=[],cands=[];
+ let ctm=[1,0,0,1,0,0];
+ const mul=(a,b)=>[a[0]*b[0]+a[1]*b[2],a[0]*b[1]+a[1]*b[3],a[2]*b[0]+a[3]*b[2],a[2]*b[1]+a[3]*b[3],a[4]*b[0]+a[5]*b[2]+b[4],a[4]*b[1]+a[5]*b[3]+b[5]];
+ for(let i=0;i<ol.fnArray.length;i++){
+  const f=ol.fnArray[i],a=ol.argsArray[i];
+  if(f===OPS.save)st.push(ctm.slice());
+  else if(f===OPS.restore){if(st.length)ctm=st.pop()}
+  else if(f===OPS.transform)ctm=mul(a,ctm);
+  else if(f===OPS.paintImageXObject||f===OPS.paintJpegXObject){
+   const m=mul(ctm,vp.transform),xs=[m[4],m[4]+m[0],m[4]+m[2],m[4]+m[0]+m[2]],ys=[m[5],m[5]+m[1],m[5]+m[3],m[5]+m[1]+m[3]];
+   const x0=Math.min(...xs),x1=Math.max(...xs),w=x1-x0,h=Math.max(...ys)-Math.min(...ys);
+   cands.push({name:a[0],x0,x1,w,h});
+  }
+ }
+ const getObj=n=>new Promise(res=>{try{pg.objs.get(n,res)}catch(e){try{pg.commonObjs.get(n,res)}catch(e2){res(null)}}});
+ const big=[];
+ for(const c of cands){
+  if(c.w<=80||c.h<=80)continue;
+  const o=await getObj(c.name);if(!o)continue;
+  const iw=o.width||(o.bitmap&&o.bitmap.width)||0;if(iw<300)continue;
+  c.o=o;c.area=c.w*c.h;big.push(c);
+ }
+ const photo=big.filter(c=>(c.x0+c.x1)/2<W*.45),mp=big.filter(c=>(c.x0+c.x1)/2>W*.55);
+ const pick=l=>l.length?l.reduce((a,b)=>b.area>a.area?b:a):null;
+ const uri=(c,lo,hi)=>{
+  if(!c)return null;
+  const fx0=Math.max(0,(lo-c.x0)/(c.x1-c.x0)),fx1=Math.min(1,(hi-c.x0)/(c.x1-c.x0));
+  try{return cvCrop(c.o,fx0>.01?fx0:0,fx1<.99?fx1:1)}catch(e){return null}
+ };
+ return [uri(pick(photo),0,W/2),uri(pick(mp),W/2,W)];
+}
+function cvCrop(o,fx0,fx1){
+ let src;
+ if(o.bitmap)src=o.bitmap;
+ else{
+  const w=o.width,h=o.height,cv=document.createElement('canvas');cv.width=w;cv.height=h;
+  const id=new ImageData(w,h),d=id.data,s=o.data;
+  if(o.kind===3||s.length===w*h*4)d.set(s);
+  else if(o.kind===2||s.length===w*h*3){for(let i=0,j=0;i<w*h;i++){d[i*4]=s[j++];d[i*4+1]=s[j++];d[i*4+2]=s[j++];d[i*4+3]=255}}
+  else{const rb=Math.ceil(w/8);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const bit=(s[y*rb+(x>>3)]>>(7-(x&7)))&1,v=bit?255:0,i=(y*w+x)*4;d[i]=d[i+1]=d[i+2]=v;d[i+3]=255}}
+  cv.getContext('2d').putImageData(id,0,0);src=cv;
+ }
+ const W=src.width,H=src.height,x0=Math.max(0,Math.round(fx0*W)),x1=Math.min(W,Math.round(fx1*W)),cw=Math.max(1,x1-x0);
+ const k=Math.min(1,CV.MAXPX/Math.max(cw,H)),ow=Math.max(1,Math.round(cw*k)),oh=Math.max(1,Math.round(H*k));
+ const c2=document.createElement('canvas');c2.width=ow;c2.height=oh;const g=c2.getContext('2d');
+ g.fillStyle='#fff';g.fillRect(0,0,ow,oh);g.drawImage(src,x0,0,cw,H,0,0,ow,oh);
+ return c2.toDataURL('image/jpeg',.85);
+}
+/* PDF 1件を読み取る → {m, warn, prop} */
+async function cvRead(buf){
+ const pdf=await pdfjsLib.getDocument({data:buf.slice?buf.slice(0):buf}).promise;
+ const lines=await cvPdfLines(pdf),[m,warn]=cvParse(lines);
+ if(!m)return {skip:warn[0]};
+ if(warn.some(w=>w.startsWith('必須')))return {skip:warn.join(' / ')};
+ let photo=null,mapImg=null;
+ try{[photo,mapImg]=await cvImages(pdf)}catch(e){}
+ if(!photo&&!m.noPhotoText&&!m.legacy)warn.push('写真を取り出せませんでした');
+ if(!mapImg)warn.push('地図の画像を取り出せませんでした');
+ if(m.legacy)warn.push('旧様式から変換（元の書類にない項目は空欄）');
+ return {m,warn,prop:cvProp(m,photo,mapImg),lines};
+}
+
+/* ---- 変換画面 ---- */
+const PDFJS_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+let cvItems=[],cvBusy=false,cvPrev=-1;
+async function cvLoad(){
+ if(window.pdfjsLib&&pdfjsLib.GlobalWorkerOptions.workerSrc)return;
+ if(!window.pdfjsLib)await new Promise((ok,ng)=>{const s=document.createElement('script');s.src=PDFJS_URL+'pdf.min.js';s.onload=ok;s.onerror=()=>ng(new Error('PDF読み取り部品を読み込めません。ネットに接続して、もう一度お試しください。'));document.head.append(s)});
+ const w=await(await fetch(PDFJS_URL+'pdf.worker.min.js')).text();
+ pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(new Blob([w],{type:'text/javascript'}));
+}
+function cvSheet(it){const old=S.issuer;S.issuer=it.issuer||{};try{return docGaiyo(ensure(sanitizeProp(it.prop)))}finally{S.issuer=old}}
+/* A4 1ページ(余白9mm)に収まらないときの縮小率 */
+function cvFit(it){
+ const h=document.createElement('div');h.style.cssText='position:fixed;left:-9999px;top:0;width:726px;visibility:hidden';
+ h.innerHTML='<div class="doc sheet" style="padding:0;border:0;max-width:none;margin:0">'+cvSheet(it)+'</div>';document.body.append(h);
+ const px=h.firstChild.getBoundingClientRect().height;h.remove();return px>1020?Math.floor(1020/px*1000)/1000:1;
+}
+function cvPage(list,auto){
+ const body=list.map(it=>`<div class="doc sheet cvp"${it.zoom<1?` style="zoom:${it.zoom}"`:''}>${cvSheet(it)}</div>`).join('');
+ return `<!doctype html><html lang="ja"><meta charset="utf-8"><title>物件概要書${list.length===1?' - '+esc(list[0].prop.name):'（'+list.length+'件）'}</title><style>body{margin:0;font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}${DOC_CSS}${st.textContent}.cvp{break-after:page}.cvp:last-child{break-after:auto}@media screen{.cvp{margin:12px auto}}</style><body>${body}${auto?'<script>addEventListener("load",()=>setTimeout(()=>print(),400))<\/script>':''}</body></html>`;
+}
+const cvName=it=>('概要書_'+it.prop.name).replace(/[\\/:*?"<>|]/g,'_').slice(0,80);
+function cvOpen(list){
+ const w=window.open('','_blank');if(!w)return toast('ポップアップがブロックされました。許可してもう一度押してください');
+ w.document.open();w.document.write(cvPage(list,true));w.document.close();
+}
+function cvBlob(name,blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000)}
+/* 保存のみ(圧縮なし)のZIPを作る */
+const CRCT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=u=>{let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRCT[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0};
+function makeZip(files){
+ const enc=new TextEncoder(),parts=[],cd=[];let off=0;
+ const le=(n,b)=>{const a=new Uint8Array(b);for(let i=0;i<b;i++)a[i]=(n>>>(8*i))&255;return a};
+ const d=new Date(),dt=((d.getFullYear()-1980)<<9|(d.getMonth()+1)<<5|d.getDate()),tm=(d.getHours()<<11|d.getMinutes()<<5|d.getSeconds()>>1);
+ for(const [name,data] of files){
+  const nb=enc.encode(name),crc=crc32(data);
+  const lh=[le(0x04034b50,4),le(20,2),le(0x0800,2),le(0,2),le(tm,2),le(dt,2),le(crc,4),le(data.length,4),le(data.length,4),le(nb.length,2),le(0,2),nb];
+  const ch=[le(0x02014b50,4),le(20,2),le(20,2),le(0x0800,2),le(0,2),le(tm,2),le(dt,2),le(crc,4),le(data.length,4),le(data.length,4),le(nb.length,2),le(0,2),le(0,2),le(0,2),le(0,2),le(0,4),le(off,4),nb];
+  parts.push(...lh,data);cd.push(...ch);off+=lh.reduce((s,x)=>s+x.length,0)+data.length;
+ }
+ const cds=cd.reduce((s,x)=>s+x.length,0);
+ return new Blob([...parts,...cd,le(0x06054b50,4),le(0,2),le(0,2),le(files.length,2),le(files.length,2),le(cds,4),le(off,4),le(0,2)],{type:'application/zip'});
+}
+function cvAdd(list,keepImg){
+ let n=0,dup=0;
+ for(const it of list){
+  const p=JSON.parse(JSON.stringify(it.prop));p.id=uid();
+  if(S.props.some(x=>x.name===p.name&&x.address===p.address)){dup++;continue}
+  if(!keepImg){delete p.photos;delete p.mapImg}
+  if(it.issuer&&it.issuer.company&&!(S.issuer&&S.issuer.company))S.issuer=Object.assign({},it.issuer);
+  const c=sanitizeProp(p);if(c){S.props.push(c);n++}
+ }
+ const ok=save();renderNav();toast(n+'件を物件一覧に追加しました'+(dup?'（登録済み '+dup+'件は除く）':'')+(ok?'':'（保存容量が不足しています）'));
+}
+async function cvRun(files){
+ if(cvBusy)return;cvBusy=true;
+ const pdfs=[...files].filter(f=>/\.pdf$/i.test(f.name));
+ if(!pdfs.length){cvBusy=false;return toast('PDFファイルを選んでください')}
+ try{await cvLoad()}catch(e){cvBusy=false;return toast(e.message)}
+ const stat=$('#cvst');
+ for(let i=0;i<pdfs.length;i++){
+  const f=pdfs[i];if(stat)stat.textContent=`変換中… ${i+1} / ${pdfs.length}　${f.name}`;
+  await new Promise(r=>setTimeout(r,0));
+  const row={file:f.name,state:'',warn:[]};
+  try{
+   const o=await cvRead(new Uint8Array(await f.arrayBuffer()));
+   if(o.skip){row.state='スキップ';row.warn=[o.skip]}
+   else{row.state=o.warn.length?'変換OK(注意)':'変換OK';row.warn=o.warn;row.prop=o.prop;row.issuer=o.m.issuer;row.zoom=cvFit(row)}
+  }catch(e){row.state='スキップ';row.warn=['PDFを読めません: '+(e&&e.message||e)]}
+  cvItems.push(row);
+  if(i%5===4||i===pdfs.length-1)cvList();
+ }
+ cvBusy=false;if(stat)stat.textContent='';cvList();
+}
+function cvList(){
+ const box=$('#cvlist');if(!box)return;
+ const ok=cvItems.filter(x=>x.prop);
+ box.innerHTML=cvItems.length?`<div class="card noprint"><div class="row" style="align-items:center"><b>${ok.length}件 変換　/　${cvItems.length-ok.length}件 スキップ</b>
+  <span class="fit"></span><button class="btn pri fit" data-cv="all"${ok.length?'':' disabled'}>まとめて印刷 / PDF保存</button><button class="btn fit" data-cv="zip"${ok.length?'':' disabled'}>HTMLをZIPで保存</button><button class="btn fit" data-cv="addall"${ok.length?'':' disabled'}>すべて物件一覧に追加</button><button class="btn dng fit" data-cv="clear">クリア</button></div>
+  <p class="note" style="margin:8px 0 0">「まとめて印刷」は、開いた画面の印刷で送信先を「PDFに保存」にすると、全件が1つのPDFになります。1件ずつ保存する場合は、各行の「印刷/PDF」を使います。</p></div>
+  <div class="card noprint scroll"><table><tr><th>元のファイル</th><th>物件名</th><th>結果</th><th>注意</th><th></th></tr>${cvItems.map((x,i)=>`<tr><td>${esc(x.file)}</td><td>${x.prop?esc(x.prop.name):''}</td><td>${esc(x.state)}</td><td class="note">${esc(x.warn.join(' / '))}</td>
+  <td style="white-space:nowrap">${x.prop?`<button class="btn" data-cv="pv:${i}">確認</button> <button class="btn" data-cv="pr:${i}">印刷/PDF</button> <button class="btn" data-cv="ht:${i}">HTML</button> <button class="btn" data-cv="ad:${i}">追加</button>`:''}</td></tr>`).join('')}</table></div>
+  <div id="cvpv">${cvPrev>=0&&cvItems[cvPrev]&&cvItems[cvPrev].prop?`<div class="doc sheet"${cvItems[cvPrev].zoom<1?` style="zoom:${cvItems[cvPrev].zoom}"`:''}>${cvSheet(cvItems[cvPrev])}</div>`:''}</div>`:'';
+}
+function convTab(){
+ V(`<div class="card noprint"><h2>古い物件概要書を、今の様式に作り直す</h2>
+  <p class="note">以前の「物件概要書」のPDFを選ぶと、項目・利回り・特記事項・発行者・写真・地図を引き継いだまま、現在の1枚様式（A4・白黒）で作り直します。元のファイルは変更されません。PDFはこの端末の中だけで処理され、外部には送信されません。</p>
+  <div class="row"><label>PDFファイル（複数選択できます）<input type="file" id="cvf" accept=".pdf,application/pdf" multiple></label>
+  <label>フォルダごと選ぶ<input type="file" id="cvd" webkitdirectory multiple></label></div>
+  <div class="cvdrop" id="cvdz" style="margin-top:10px;border:2px dashed var(--line);border-radius:10px;padding:22px;text-align:center;color:var(--mut,#777)">ここにPDFをドラッグ＆ドロップ</div>
+  <p class="note" id="cvst" style="margin:8px 0 0"></p>
+  <p class="note">投資分析書など、概要書の様式ではないPDFは自動でスキップします。数百件を一度に処理するときは、100件ずつ程度に分けると安定します。写真・地図は元のPDFにある画像をそのまま使います。</p></div><div id="cvlist"></div>`);
+ cvList();
+ const go=fs=>{cvRun(fs)};
+ $('#cvf').onchange=e=>{go(e.target.files);e.target.value=''};
+ $('#cvd').onchange=e=>{go(e.target.files);e.target.value=''};
+ const dz=$('#cvdz');
+ dz.ondragover=e=>{e.preventDefault();dz.style.background='rgba(120,160,255,.12)'};
+ dz.ondragleave=()=>{dz.style.background=''};
+ dz.ondrop=e=>{e.preventDefault();dz.style.background='';go(e.dataTransfer.files)};
+ $('#view').onclick=e=>{
+  const b=e.target.closest('button[data-cv]');if(!b)return;const [a,i]=b.dataset.cv.split(':'),it=cvItems[+i],ok=cvItems.filter(x=>x.prop);
+  if(a==='all')cvOpen(ok);
+  else if(a==='zip'){b.disabled=true;setTimeout(()=>{const used={},enc=new TextEncoder();
+    const files=ok.map(x=>{let n=cvName(x),k=n;for(let c=2;used[k];c++)k=n+'_'+c;used[k]=1;return [k+'.html',enc.encode(cvPage([x],false))]});
+    cvBlob('概要書_変換済み.zip',makeZip(files));b.disabled=false},30)}
+  else if(a==='addall'){if(confirm(ok.length+'件を物件一覧に追加します。写真・地図の画像は容量が大きいため、一覧には保存しません（書類は元のPDFから作り直せます）。よろしいですか？'))cvAdd(ok,false)}
+  else if(a==='clear'){if(confirm('変換結果をクリアします。')){cvItems=[];cvPrev=-1;cvList()}}
+  else if(a==='pv'){cvPrev=cvPrev===+i?-1:+i;cvList();if(cvPrev>=0)$('#cvpv').scrollIntoView({behavior:'smooth'})}
+  else if(a==='pr')cvOpen([it]);
+  else if(a==='ht')cvBlob(cvName(it)+'.html',new Blob([cvPage([it],false)],{type:'text/html'}));
+  else if(a==='ad')cvAdd([it],true);
+ };
 }
 
 /* ---------- データ ---------- */

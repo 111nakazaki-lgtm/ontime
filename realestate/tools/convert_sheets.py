@@ -76,7 +76,7 @@ def parse_legacy(toks):
     m['name'] = next((t for t in tail if not t.startswith('■')), '')
     iss = {'company': '', 'role': '', 'name': '', 'tel': '', 'email': '', 'office': ''}
     for t in head:
-        if re.search(r'Mobile|Tel', t): iss['tel'] = re.sub(r'^(Mobile|Tel)[：:]\\s*', '', t).strip()
+        if re.search(r'Mobile|Tel', t): iss['tel'] = re.sub(r'^(Mobile|Tel)[：:]\s*', '', t).strip()
         elif '@' in t: iss['email'] = t.strip()
         elif not iss['company'] and re.search(r'株式会社|Inc', t): iss['company'] = t
         elif not iss['name'] and iss['company'] and t != iss['company']: iss['name'] = t
@@ -108,8 +108,8 @@ def parse_legacy(toks):
     if m['curRent']: m['hasIncome'] = True
     if val('表面利回り'): m['grossText'] = val('表面利回り')
     pv = val('売出価格')
-    pm = re.match(r'^([\\d,\\.]+)\\s*(億)?\\s*([\\d,]*)\\s*(万)?円', pv) if pv else None
-    if pv and re.match(r'^[\\d,]+円$', pv): m['price'] = int(re.sub(r'[^\\d]', '', pv))
+    pm = re.match(r'^([\d,\.]+)\s*(億)?\s*([\d,]*)\s*(万)?円', pv) if pv else None
+    if pv and re.match(r'^[\d,]+円$', pv): m['price'] = int(re.sub(r'[^\d]', '', pv))
     elif pv and pm: m['price'] = int(float(pm.group(1).replace(',', '')) * (1e8 if pm.group(2) else (1e4 if pm.group(4) else 1)) + (float(pm.group(3).replace(',', '') or 0) * 1e4 if pm.group(3) else 0))
     else: m['priceNote'] = '価格要相談'
     other = val('その他制限')

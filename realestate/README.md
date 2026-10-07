@@ -29,4 +29,6 @@
 `node realestate/tests/logic.test.js`（playwright と chromium が必要）
 
 ## 既存の概要書PDFの一括変換
-`realestate/tools/` の変換ツールで、既存の概要書PDFを今の様式で作り直せます（元ファイルは変更せず、別フォルダに出力）。詳しくは `realestate/tools/README.md`。
+**アプリ内（おすすめ）**: 上部メニューの「概要書の変換」に、古い概要書のPDFを複数選ぶ（またはドラッグ＆ドロップ）と、今の1枚様式に作り直します。インストール不要で、PDFは端末の中だけで処理されます。各行の「印刷/PDF」でPDF保存、「まとめて印刷」で全件を1つのPDFに、「HTMLをZIPで保存」「物件一覧に追加」も使えます（初回のみ、PDF読み取り部品をネットから読み込みます）。
+
+**パソコンのコマンド版**: `realestate/tools/` の変換ツールで、既存の概要書PDFを今の様式で作り直せます（元ファイルは変更せず、別フォルダに出力）。詳しくは `realestate/tools/README.md`。
