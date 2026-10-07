@@ -6,7 +6,7 @@ Threads に投稿する小さなツール(標準ライブラリのみ)。公式�
 1. https://developers.facebook.com でアプリを作り、Threads API を追加
 2. 権限 `threads_basic` と `threads_content_publish` を付けてアクセストークンを発行
 3. 次の2つを環境変数に入れる(リポジトリには入れない)
-   `THREADS_ACCESS_TOKEN` `THREADS_USER_ID`
+   `THREADS_ACCESS_TOKEN`(必須)、`THREADS_USER_ID`(省略可。空なら `me` = 自分のアカウント)
    ※ トークンは期限がある(長期トークンは約60日)。期限前に更新する
 
 ## 使い方

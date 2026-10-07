@@ -6,7 +6,8 @@
   python post.py --queue queue.txt --send  # キューの先頭1行を投稿して消す
 
 認証情報は環境変数から読む(リポジトリには入れない):
-  THREADS_ACCESS_TOKEN, THREADS_USER_ID
+  THREADS_ACCESS_TOKEN (必須)
+  THREADS_USER_ID      (省略可。空なら自分のアカウント "me" に投稿)
 """
 import argparse
 import json
@@ -18,7 +19,7 @@ import urllib.request
 
 BASE = "https://graph.threads.net/v1.0"
 MAX_LEN = 500
-KEYS = ["THREADS_ACCESS_TOKEN", "THREADS_USER_ID"]
+KEYS = ["THREADS_ACCESS_TOKEN"]
 
 
 def call(path: str, params: dict) -> dict:
@@ -33,7 +34,7 @@ def call(path: str, params: dict) -> dict:
 
 
 def send(text: str, env: dict) -> str:
-    uid, token = env["THREADS_USER_ID"], env["THREADS_ACCESS_TOKEN"]
+    uid, token = env["THREADS_USER_ID"] or "me", env["THREADS_ACCESS_TOKEN"]
     # 1) 投稿の下書き(コンテナ)を作る  2) 公開する
     created = call(f"{uid}/threads", {"media_type": "TEXT", "text": text, "access_token": token})
     done = call(f"{uid}/threads_publish", {"creation_id": created["id"], "access_token": token})
@@ -75,6 +76,7 @@ def main(argv):
         return
 
     env = {k: os.environ.get(k, "") for k in KEYS}
+    env["THREADS_USER_ID"] = os.environ.get("THREADS_USER_ID", "")
     missing = [k for k in KEYS if not env[k]]
     if missing:
         sys.exit("環境変数が足りません: " + ", ".join(missing))
