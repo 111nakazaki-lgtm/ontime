@@ -321,7 +321,10 @@ def crop_uri(doc, xref, fx0, fx1):
     x0, x1 = max(0, int(round(fx0 * pix.width))), min(pix.width, int(round(fx1 * pix.width)))
     clip = pymupdf.IRect(x0, 0, max(x0 + 1, x1), pix.height)
     k = min(1.0, MAX_PX / max(clip.width, clip.height))  # 長辺を MAX_PX 以下に縮小（ファイルサイズを抑える）
-    cut = pymupdf.Pixmap(pix, max(1, int(clip.width * k)), max(1, int(clip.height * k)), clip)
+    cut = pymupdf.Pixmap(pix.colorspace, clip, False)
+    cut.copy(pix, clip)
+    n = int(1 / k)
+    if n >= 2: cut.shrink(n)  # 整数倍で縮小（Pixmap の拡縮コンストラクタは一部の画像で落ちるため使わない）
     return 'data:image/jpeg;base64,' + base64.b64encode(cut.tobytes('jpeg', jpg_quality=85)).decode()
 
 
