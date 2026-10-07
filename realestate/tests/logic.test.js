@@ -50,6 +50,13 @@ const near=(a,b,tol,msg)=>assert.ok(Math.abs(a-b)<=tol,`${msg}: ${a} vs ${b}`);
   assert.ok(/^[\w-]+$/.test(r.id));assert.strictEqual(r.price,0);assert.strictEqual(r.type,'マンション');assert.strictEqual(r.status,'検討中');assert.strictEqual(r.photos.length,1);assert.strictEqual(r.geo.lat,'');assert.strictEqual(r.geo.lng,'')});
  await t('JSON読込でも無害化され、重複IDは振り直される',async()=>{const s=await ev(()=>stateFrom({props:[{id:'a',name:'1'},{id:'a',name:'2'},null,'x'],cmp:['a','zz']}));assert.strictEqual(s.props.length,2);assert.notStrictEqual(s.props[0].id,s.props[1].id);assert.ok(s.cmp.length<=1)});
  await t('シミュレーターの極端値でも壊れない',async()=>{const html=await ev(()=>{tab='sim';render();calc({price:3e7,rent:1.2e5,mgmt:1e4,tax:6e4,other:0,down:150,rate:-1,years:0,vac:5,cost:7,hold:60,growth:0,exit:0,tax2:20});return document.querySelector('#out').innerText});assert.ok(!/NaN|Infinity/.test(html),html.slice(0,200))});
+ await t('金額・面積・年月の日本式表記',async()=>{
+  const r=await ev(()=>[jpMoney(4e9),jpMoney(68e6),jpMoney(123450000),jpMoney(1e8),jpMoney(0),fmtArea(477.98),fmtArea(0),WAym('1991-09-01'),WAym('2019-05-01')]);
+  assert.deepStrictEqual(r,['40億円','6,800万円','1億2,345万円','1億円','','477.98㎡（144.59坪）','','平成3年9月','令和元年5月'])});
+ await t('概要書は1枚もの様式(見本の見出し順)',async()=>{const h=await ev(()=>{const p=ensure(S.props.find(x=>x.type==='ビル・店舗'));return docGaiyo(p)});
+  const order=['物 件 概 要 書','>価格<','土　　地','建　　物','収　益　情　報','法　規　制','特　記　事　項','地　図'];let at=-1;
+  for(const k of order){const i=h.indexOf(k,at+1);assert.ok(i>at,'見出し順: '+k);at=i}});
+ await t('概要書:発行者情報を空にすると見出し・フッターに会社名が出ない',async()=>{const h=await ev(()=>{S.issuer={};return docGaiyo(ensure(S.props[0]))});assert.ok(!/class="co"/.test(h))});
  await t('全タブがエラーなく描画できる',async()=>{for(const k of ['dash','list','pipe','cmp','sim','doc','data']){await ev(k=>{tab=k;render()},k)}assert.deepStrictEqual(errs,[])});
  await t('概要書・登記分析書のHTMLに未エスケープの入力が入らない',async()=>{const h=await ev(()=>{const p=ensure(S.props[0]);p.name='<img src=x onerror=alert(1)>';p.reg.kou[0].holder='<script>1</script>';return docGaiyo(p)+docTouki(p)});assert.ok(!/<img src=x|<script>1/.test(h))});
  console.log(`\n${n} tests run`);await b.close();

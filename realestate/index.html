@@ -115,9 +115,10 @@ function sanitizeProp(p){
 function stateFrom(j){const seen=new Set(),props=[];
  (Array.isArray(j.props)?j.props:[]).forEach(x=>{const o=sanitizeProp(x);if(!o)return;while(seen.has(o.id))o.id=uid();seen.add(o.id);props.push(o)});
  const sim=j.sim&&typeof j.sim==='object'?Object.fromEntries(Object.entries(j.sim).filter(([k,v])=>typeof v==='number'||k==='_for')):{};
- return {props,cmp:(Array.isArray(j.cmp)?j.cmp:[]).filter(id=>seen.has(id)).slice(0,3),sim}}
+ const iss=Object.fromEntries(['company','role','name','tel','email'].map(k=>[k,cleanStr(j.issuer?.[k],100)]));
+ return {props,cmp:(Array.isArray(j.cmp)?j.cmp:[]).filter(id=>seen.has(id)).slice(0,3),sim,issuer:iss}}
 function load(){let j=null;try{j=JSON.parse(localStorage.getItem(KEY))}catch(e){}
- S=j&&Array.isArray(j.props)?stateFrom(j):{props:SAMPLE.map(p=>({...p})),cmp:[],sim:{}}}
+ S=j&&Array.isArray(j.props)?stateFrom(j):{props:SAMPLE.map(p=>({...p})),cmp:[],sim:{},issuer:{}}}
 let _t=null;function saveSoon(){clearTimeout(_t);_t=setTimeout(()=>{_t=null;save()},300)}
 function flushSave(){if(_t){clearTimeout(_t);_t=null;save()}}
 addEventListener('pagehide',flushSave);addEventListener('beforeunload',flushSave);
@@ -336,7 +337,7 @@ function chart(pts){
 }
 
 /* ---------- 書類（物件概要書・登記分析書） ---------- */
-const DET_DEF={seller:'',dealType:'',occupancy:'',delivery:'',rightType:'所有権',district:'',zoning:'',coverage:'',far:'',fire:'',roadDir:'',roadKind:'',roadWidth:'',frontage:'',siteArea:'',footprint:'',totalFloor:'',stories:'',equip:'',mgmtForm:'',manager:'',parking:'',school:'',special:''};
+const DET_DEF={docNo:'',transit:'',floorsAbove:'',floorsBelow:'',roof:'',units:'',elevator:'',inspection:'',heightDistrict:'',currentRent:'',occupancyRate:'',costRate:'',seller:'',dealType:'',occupancy:'',delivery:'',rightType:'所有権',district:'',zoning:'',coverage:'',far:'',fire:'',roadDir:'',roadKind:'',roadWidth:'',frontage:'',siteArea:'',footprint:'',totalFloor:'',stories:'',equip:'',mgmtForm:'',manager:'',parking:'',school:'',special:''};
 const SAMPLE_X={
  s0:{det:{seller:'山田 太郎',dealType:'媒介(仲介)',occupancy:'空家',delivery:'決済後2週間以内',rightType:'所有権',district:'市街化区域',zoning:'第一種住居地域',coverage:'60',far:'300',fire:'準防火地域',roadDir:'南',roadKind:'公道(42条1項1号)',roadWidth:'8.0',stories:'地上14階建の5階部分',equip:'オートロック・宅配ボックス・床暖房・食洗機',mgmtForm:'全部委託',manager:'(サンプル)管理株式会社',parking:'なし(近隣月極 28,000円)',school:'区立小学校 徒歩6分',special:'修繕積立金は段階増額方式。次回改定予定あり。'},
   reg:{acquired:'2026-09-20',land:{place:'東京都渋谷区○○一丁目',lot:'12番3',category:'宅地',area:'1850.20'},bldg:{place:'東京都渋谷区○○一丁目12番地3',no:'12番3の504',kind:'居宅',struct:'鉄筋コンクリート造',floorArea:'42.5',built:'2020-03-15'},
@@ -466,25 +467,37 @@ function svgPhoto(title,sub,c1,c2,kind){
  if(kind==='plan')b=`<rect x="120" y="90" width="560" height="330" fill="#fff" stroke="#334" stroke-width="6"/><line x1="400" y1="90" x2="400" y2="270" stroke="#334" stroke-width="4"/><line x1="120" y1="270" x2="680" y2="270" stroke="#334" stroke-width="4"/><line x1="470" y1="270" x2="470" y2="420" stroke="#334" stroke-width="4"/><text x="250" y="190" font-size="26" fill="#334">LDK</text><text x="520" y="190" font-size="26" fill="#334">洋室</text><text x="250" y="355" font-size="26" fill="#334">水廻り</text><text x="540" y="355" font-size="26" fill="#334">収納</text>`;
  else{let w='';for(let r=0;r<4;r++)for(let c=0;c<5;c++)w+=`<rect x="${250+c*62}" y="${130+r*62}" width="36" height="40" fill="#cfe8ff" stroke="#456" stroke-width="2"/>`;
   b=`<rect x="0" y="400" width="800" height="100" fill="#8aa17a"/><rect x="230" y="90" width="340" height="320" fill="#f5efe6" stroke="#456" stroke-width="4"/>${w}<rect x="375" y="330" width="50" height="80" fill="#8a5a3a"/><circle cx="640" cy="120" r="40" fill="#ffe28a"/>`}
- const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/>${b}<text x="20" y="78" font-size="28" font-family="sans-serif" fill="#123" font-weight="700">${title}</text><text x="20" y="432" font-size="22" font-family="sans-serif" fill="#123">${sub}</text></svg>`;
+ const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/>${b}<text x="90" y="78" font-size="28" font-family="sans-serif" fill="#123" font-weight="700">${title}</text><text x="90" y="432" font-size="22" font-family="sans-serif" fill="#123">${sub}</text></svg>`;
  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)}
 const SAMPLE_G={
  s0:{geo:{lat:'35.6580',lng:'139.7016',zoom:'16',layer:'std'},photos:[{src:svgPhoto('(サンプル)外観','イメージ図','#9fd0ff','#e8f4ff','ext'),cap:'外観'},{src:svgPhoto('(サンプル)間取り','1LDK 42.5㎡','#fff3d6','#ffe3a8','plan'),cap:'間取り図'}]},
  s2:{geo:{lat:'34.7456',lng:'135.5319',zoom:'16',layer:'std'},photos:[{src:svgPhoto('(サンプル)外観','軽量鉄骨造 2階建 8戸','#bfe3c6','#eef9f0','ext'),cap:'外観(南東側)'},{src:svgPhoto('(サンプル)配置・間取り','1戸あたりの例','#ffe0e0','#fff1f1','plan'),cap:'間取り(例)'}]},
  s7:{geo:{lat:'34.9965',lng:'135.7608',zoom:'17',layer:'std'},photos:[{src:svgPhoto('(サンプル)町家 外観','築50年 木造2階建','#e6d3ff','#f7f0ff','ext'),cap:'外観'}]}
 };
+
+const SAMPLE_D={
+ s0:{transit:'JR山手線・東急東横線ほか「渋谷」駅',floorsAbove:'14',floorsBelow:'0',roof:'陸屋根',elevator:'有',inspection:'有',heightDistrict:'第3種高度地区',occupancy:'空家'},
+ s2:{transit:'阪急京都線「上新庄」駅',floorsAbove:'2',floorsBelow:'0',roof:'切妻屋根',units:'8戸',elevator:'無',inspection:'不明',heightDistrict:'',currentRent:'560000',occupancyRate:'87.5',occupancy:'一部空室',special:'全8戸中7戸入居中。\n屋根・外壁の修繕履歴の開示を依頼中。'},
+ s7:{transit:'京都市営地下鉄烏丸線「五条」駅',floorsAbove:'2',floorsBelow:'0',roof:'瓦屋根',elevator:'無',inspection:'無'}
+};
+SAMPLE_X.s6={det:{seller:'(サンプル)商事株式会社',dealType:'売主',occupancy:'満室稼働中',delivery:'相談',rightType:'所有権',district:'市街化区域',zoning:'商業地域',coverage:'80',far:'600',fire:'防火地域',heightDistrict:'',roadDir:'南',roadKind:'公道(42条1項1号)',roadWidth:'12',frontage:'9.5',siteArea:'180',footprint:'140',totalFloor:'1050',stories:'地上5階建',floorsAbove:'5',floorsBelow:'0',roof:'陸屋根',units:'6区画',elevator:'有',inspection:'有',transit:'JR根岸線「関内」駅・横浜市営地下鉄ブルーライン「関内」駅',currentRent:'850000',occupancyRate:'100',mgmtForm:'全部委託',manager:'(サンプル)ビルマネジメント',parking:'なし',special:'各フロア用途：1F 店舗、2〜4F 事務所、5F 店舗。\n1階テナントの契約期間が残り2年。\n建蔽率・容積率は用途地域の複合に注意。'},
+ reg:{acquired:'2026-09-01',land:{place:'神奈川県横浜市中区○○町',lot:'3番2',category:'宅地',area:'180.00'},bldg:{place:'神奈川県横浜市中区○○町3番地2',no:'3番2',kind:'店舗・事務所',struct:'鉄骨鉄筋コンクリート造',floorArea:'210.0',built:'2001-03-20'},
+  kou:[{no:'1',purpose:'所有権移転',date:'2012-04-10',cause:'平成24年4月1日売買',holder:'(サンプル)商事株式会社'}],otsu:[],joint:''}};
+SAMPLE_G.s6={geo:{lat:'35.4437',lng:'139.6380',zoom:'16',layer:'std'},photos:[{src:svgPhoto('(サンプル)外観','店舗・事務所ビル','#b8d4f0','#eef5fc','ext'),cap:'外観'}]};
+function attachExtra(){S.props.forEach(p=>{const e=SAMPLE_D[p.id];if(e&&p.det)Object.keys(e).forEach(k=>{if(!p.det[k])p.det[k]=e[k]})})}
 function attachGeo(){S.props.forEach(p=>{const g=SAMPLE_G[p.id];if(g){if(!p.geo)p.geo={...g.geo};if(!p.photos)p.photos=g.photos.map(x=>({...x}))}})}
 function tileXY(lat,lng,z){const n=Math.pow(2,z),r=lat*Math.PI/180;return {x:(lng+180)/360*n,y:(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n}}
-function mapHTML(p){
+function mapHTML(p,W0=768,H0=240,inline=false){
  const g=p.geo||GEO_DEF,lat=parseFloat(g.lat),lng=parseFloat(g.lng),z=Math.min(18,Math.max(10,parseInt(g.zoom)||16));
  if(!isFinite(lat)||!isFinite(lng)||Math.abs(lat)>85||Math.abs(lng)>180)return `<div class="ph-empty">位置情報が未設定です(「地図・写真」で住所検索または緯度経度を入力)</div>`;
- const [ln,ext]=LAYERS[g.layer]||LAYERS.std,key=LAYERS[g.layer]?g.layer:'std',W=768,H=240,c=tileXY(lat,lng,z);
+ const [ln,ext]=LAYERS[g.layer]||LAYERS.std,key=LAYERS[g.layer]?g.layer:'std',W=W0,H=H0,c=tileXY(lat,lng,z);
  const x0=Math.floor(c.x-W/2/256),x1=Math.floor(c.x+W/2/256),y0=Math.floor(c.y-H/2/256),y1=Math.floor(c.y+H/2/256),n=Math.pow(2,z);let t='';
  for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){if(ty<0||ty>=n)continue;const px=W/2+(tx-c.x)*256,py=H/2+(ty-c.y)*256,xx=((tx%n)+n)%n;
   t+=`<img alt="" onerror="this.remove()" src="https://cyberjapandata.gsi.go.jp/xyz/${key}/${z}/${xx}/${ty}.${ext}" style="left:${(px/W*100).toFixed(4)}%;top:${(py/H*100).toFixed(4)}%;width:${(256/W*100).toFixed(4)}%;height:${(256/H*100).toFixed(4)}%">`}
  const scale={14:'約1:35,000',15:'約1:17,000',16:'約1:8,500',17:'約1:4,300',18:'約1:2,100'}[z]||'';
- return `<div class="mapwrap"><div class="mapbox" style="aspect-ratio:${W}/${H}"><span class="mapoff">地図を読み込めません(オフライン時は表示されません)</span>${t}<i class="pin"></i></div>
- <div class="mapcap">${esc(ln)}　緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}　${scale}　出典:国土地理院タイル</div></div>`}
+ const box=`<div class="mapbox" style="aspect-ratio:${W}/${H}"><span class="mapoff">地図を読み込めません(オフライン時は表示されません)</span>${t}<i class="pin"></i>${inline?'<span class="attr">出典:国土地理院タイル</span>':''}</div>`;
+ if(inline)return box;
+ return `<div class="mapwrap">${box}<div class="mapcap">${esc(ln)}　緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}　${scale}　出典:国土地理院タイル</div></div>`}
 function photosHTML(p){
  const ph=(p.photos||[]).filter(x=>safeImg(x.src));
  if(!ph.length)return `<div class="ph-empty">写真が未登録です(「地図・写真」から追加)</div>`;
@@ -510,7 +523,6 @@ const MAP_CSS=`
 .doc .ph-main,.doc .mapwrap{break-inside:avoid}.doc .ph-main{position:relative;border-radius:8px;overflow:hidden;border:1px solid #889;background:#000}.doc .ph-main img{display:block;width:100%;aspect-ratio:2/1;object-fit:cover;background:#111}.doc .ph-main .cap{position:absolute;left:0;bottom:0;right:0;background:rgba(0,0,0,.55);color:#fff;padding:3px 10px;font-size:12px}
 .doc .ph-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px}.doc .ph-grid figure{margin:0;page-break-inside:avoid}.doc .ph-grid img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border:1px solid #889;border-radius:6px}.doc .ph-grid figcaption{font-size:11px;text-align:center;color:#334}
 .doc .ph-empty{border:2px dashed #99a;border-radius:8px;padding:22px;text-align:center;color:#667;font-size:12px}
-.doc.gaiyo h2.c9{background:#e07b1a}.doc.gaiyo h2.c10{background:#0f8b9d}
 .thumb{width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
 .pe{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}.pe .it{border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--bg)}.pe img{width:100%;height:100px;object-fit:cover;border-radius:6px}.pe .b{display:flex;gap:4px;margin-top:4px}.pe .b button{padding:2px 8px;font-size:12px}
 @media(max-width:600px){.doc .ph-grid{grid-template-columns:repeat(2,1fr)}}`;
@@ -526,24 +538,28 @@ const DOC_CSS=`.doc{background:#fff;color:#111;border:1px solid #ccc;border-radi
 .doc .box{border:2px solid #1f4e8c;padding:8px 12px;margin:8px 0;display:flex;gap:18px;flex-wrap:wrap;align-items:center}.doc .big{font-size:26px;font-weight:700}
 .doc .item{border:1px solid #bbb;border-radius:4px;padding:6px 10px;margin:6px 0;page-break-inside:avoid}.doc .item .act{color:#333;margin-top:2px}
 .doc .foot{margin-top:16px;font-size:11px;color:#555;border-top:1px solid #aaa;padding-top:6px}.doc ul{margin:4px 0;padding-left:20px}`;
-const st=document.createElement('style');st.textContent=DOC_CSS+MAP_CSS+`
-.doc.gaiyo{background:linear-gradient(180deg,#f4f9ff 0,#fff 140px);border-top:8px solid #1f6feb}
-.doc.gaiyo h1{color:#0b3d91;font-size:24px}
-.doc.gaiyo h2{color:#fff;border-left:0;border-radius:4px;padding:4px 12px}
-.doc.gaiyo h2.c1{background:#1f6feb}.doc.gaiyo h2.c2{background:#1a9e6b}.doc.gaiyo h2.c3{background:#e07b1a}.doc.gaiyo h2.c4{background:#8e44ad}.doc.gaiyo h2.c5{background:#d6336c}.doc.gaiyo h2.c6{background:#0f8b9d}.doc.gaiyo h2.c7{background:#c0392b}.doc.gaiyo h2.c8{background:#5b6b7a}
-.doc.gaiyo .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0 4px}
-.doc.gaiyo .kpi{border-radius:8px;padding:8px 10px;color:#fff;text-align:center}.doc.gaiyo .kpi span{display:block;font-size:11px;opacity:.9}.doc.gaiyo .kpi b{font-size:18px}
-.doc.gaiyo .k1{background:linear-gradient(135deg,#1f6feb,#4c9bff)}.doc.gaiyo .k2{background:linear-gradient(135deg,#1a9e6b,#47c795)}.doc.gaiyo .k3{background:linear-gradient(135deg,#e07b1a,#f5a65b)}
-.doc.gaiyo .k4{background:linear-gradient(135deg,#1e8449,#52be80)}.doc.gaiyo .k4.kv-注意{background:linear-gradient(135deg,#d68910,#f5b041)}.doc.gaiyo .k4.kv-重大{background:linear-gradient(135deg,#c0392b,#e57368)}
-.doc.gaiyo table{border-color:#c9d3e0}.doc.gaiyo th,.doc.gaiyo td{border-color:#c9d3e0}
-.doc.gaiyo h2.c1~table:first-of-type th{background:#dbe9ff}
-.doc.gaiyo th{background:#eaf1fb;color:#0b3d91}
-.doc.gaiyo tr:nth-child(even) td{background:#fafcff}
-.doc.gaiyo li{margin:3px 0}
-.doc.gaiyo .foot{border-top:3px solid #1f6feb}
+const SHEET_CSS=`.doc.sheet{background:#fff;color:#111;max-width:210mm;margin:0 auto;padding:8mm 9mm;border:1px solid #bbb;border-radius:0;font-size:9pt;line-height:1.45;font-family:"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans CJK JP","Noto Sans JP","Yu Gothic",Meiryo,sans-serif}
+.sheet .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:4px;margin-bottom:6px}
+.sheet .hd .l{display:flex;align-items:center;gap:10px}.sheet .hd .co{font-size:17pt;font-weight:800;letter-spacing:.03em}.sheet .hd .vbar{width:1px;height:22px;background:#111}
+.sheet .hd h1{font-size:15pt;letter-spacing:.3em;margin:0;text-align:left;color:#111}.sheet .hd .r{text-align:right;font-weight:700;font-size:10pt}.sheet .hd .r small{display:block;font-weight:400;font-size:7pt;color:#666}
+.sheet table{width:100%;border-collapse:collapse;table-layout:auto;margin:0}.sheet table.r{margin-top:-1px}.sheet .grp>table.r:first-child{margin-top:0}
+.sheet th,.sheet td{border:1px solid #999;padding:3px 7px;vertical-align:middle;text-align:left;font-size:8.5pt;white-space:normal;position:static;background:none;color:#111;word-break:break-all}
+.sheet th{background:#efefef;font-weight:700;text-align:center;font-size:7.5pt;width:1%;white-space:nowrap;padding:3px 9px}
+.sheet .band{background:#111;color:#fff;text-align:center;font-weight:700;letter-spacing:.7em;font-size:8.5pt;padding:2px 0 2px .7em;margin-top:6px}
+.sheet .pricebox{border:1px solid #999;display:flex;margin-top:6px}.sheet .pricebox .k{background:#efefef;font-weight:700;font-size:7.5pt;display:flex;align-items:center;justify-content:center;border-right:1px solid #999;padding:0 14px}
+.sheet .pricebox .v{padding:5px 12px}.sheet .pricebox .big{font-size:25pt;font-weight:800;line-height:1.15}.sheet .pricebox .big small{font-size:10pt;font-weight:600;margin-left:3px}.sheet .pricebox .big i{font-style:normal;font-size:11pt;font-weight:600;margin-left:12px}
+.sheet .badge{display:inline-block;background:#111;color:#fff;font-weight:700;font-size:7pt;padding:1px 7px;margin-right:9px}.sheet .sub{font-size:8pt;color:#444}.sheet .mut{color:#666;font-weight:400}.sheet .sm{font-size:7pt}
+.sheet .tokki{border:1px solid #999;border-top:0;padding:5px 10px;min-height:16mm}.sheet .tokki p{margin:0 0 3px}
+.sheet .pan{display:grid;grid-template-columns:1fr 1fr;border:1px solid #999;border-top:0}.sheet .pan>div{position:relative;overflow:hidden;background:#e4e8ed;aspect-ratio:512/320}
+.sheet .pan img.ph{width:100%;height:100%;object-fit:cover;display:block}.sheet .pan .ph-empty{height:100%;display:flex;align-items:center;justify-content:center;border:0;border-radius:0}
+.sheet .pan .mapbox{height:100%;border:0;border-radius:0;aspect-ratio:auto!important}.sheet .pan .attr{position:absolute;right:4px;bottom:2px;font-size:6pt;color:#333;background:rgba(255,255,255,.75);padding:0 3px;z-index:3}
+.sheet .ft{display:flex;justify-content:space-between;gap:12px;border-top:2px solid #111;margin-top:6px;padding-top:4px;font-size:7.5pt}.sheet .ft .n{font-size:6.5pt;color:#555;text-align:right}
+.sheet .pg2{margin-top:8mm;break-before:page}.sheet .ph-grid.g3{grid-template-columns:repeat(3,1fr)}.sheet .ph-grid.g3 img{aspect-ratio:4/3}
+@media(max-width:700px){.doc.sheet{padding:6px;font-size:8pt}.sheet .pricebox .big{font-size:17pt}}
+`;
+const st=document.createElement('style');st.textContent=DOC_CSS+MAP_CSS+SHEET_CSS+`
 .doc{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-@media(max-width:600px){.doc.gaiyo .kpis{grid-template-columns:repeat(2,1fr)}}
-@media print{.doc h2{break-after:avoid}.doc tr,.doc .item,.doc .kpi{break-inside:avoid}header,.noprint,nav{display:none!important}body{background:#fff}main{padding:0;max-width:none}.doc{border:0;border-radius:0;padding:0;max-width:none}@page{size:A4;margin:14mm}}
+@media print{.doc h2{break-after:avoid}.doc tr,.doc .item,.doc .kpi{break-inside:avoid}header,.noprint,nav{display:none!important}body{background:#fff}main{padding:0;max-width:none}.doc{border:0;border-radius:0;padding:0;max-width:none}@page{size:A4;margin:9mm}.doc.sheet{max-width:none;padding:0;border:0}}
 details.card summary{cursor:pointer;font-weight:600}details.card .form{margin-top:10px}.tbl-in input{min-width:90px;padding:4px 6px}.tbl-in td,.tbl-in th{padding:4px}.tbl-in input[type=checkbox]{min-width:0;width:auto}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{border:0;background:var(--card);color:var(--ink);padding:7px 14px;font:inherit;cursor:pointer}.seg button.on{background:var(--accent);color:var(--accent-ink)}
 .vchip{display:inline-block;border-radius:99px;padding:1px 10px;font-size:12px;color:#fff}.v-重大{background:#c0392b}.v-注意{background:#d68910}.v-良好{background:#1e8449}`;
@@ -551,23 +567,64 @@ document.head.append(st);
 
 const T=(rows)=>`<table>${rows.map(([a,b,c,d])=>c!==undefined?`<tr><th>${a}</th><td>${b||'　'}</td><th>${c}</th><td>${d||'　'}</td></tr>`:`<tr><th>${a}</th><td colspan="3">${b||'　'}</td></tr>`).join('')}</table>`;
 const nz=(v,u='')=>v!==''&&v!=null&&v!==undefined&&!(typeof v==='number'&&!isFinite(v))?esc(v)+u:'';
+/* ---- 物件概要書(1枚もの・売買物件概要書の様式) ---- */
+function jpMoney(n){if(!isFinite(n)||n<=0)return '';let o=Math.floor(n/1e8),m=Math.round((n%1e8)/1e4);if(m>=10000){o++;m-=10000}
+ return (o?o+'億':'')+(m?m.toLocaleString('ja-JP')+'万':'')+'円'}
+const f2=n=>n.toLocaleString('ja-JP',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtArea=n=>isFinite(n)&&n>0?`${f2(n)}㎡（${f2(n/3.305785)}坪）`:'';
+const WAym=d=>WA(d).replace(/\d+日$/,'');
+const STRUCT_LABEL={'木造':'木造','木造モルタル':'木造（モルタル）','軽量鉄骨造(厚3mm以下)':'軽量鉄骨造（厚3mm以下）','軽量鉄骨造(厚3mm超4mm以下)':'軽量鉄骨造（厚3mm超4mm以下）','鉄骨造(厚4mm超)':'S造（鉄骨造）','鉄筋コンクリート造':'RC造（鉄筋コンクリート造）','鉄骨鉄筋コンクリート造':'SRC造（鉄骨鉄筋コンクリート造）'};
+const CIRC='①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮⑯⑰⑱⑲⑳';
+const ymd=()=>{const t=new Date();return t.getFullYear()+'年'+(t.getMonth()+1)+'月'+t.getDate()+'日'};
 function docGaiyo(p){
- ensure(p);const d=p.det,r=p.reg,A=analyze(p),V2=verdict(A),isL=p.type==='土地',L=lifeInfo(p);
- const warn=A.filter(i=>i.level==='重大'||i.level==='注意');
- const ow=ownership(p),cur=ow.any,am=activeMort(p),mort=am.list,msum=am.sum;
- const ownTxt=ow.split?ow.scopes.map(s=>ow.cur[s]?s+':'+esc(ow.cur[s].holder):s+':不明').join(' / '):(cur?esc(cur.holder)+'('+WA(cur.date)+' '+esc(cur.purpose)+')':'未入力');
- const sellOk=!d.seller?'':(ow.scopes.every(s=>ow.cur[s]&&nameMatch(ow.cur[s].holder,d.seller))?'一致':'<b>不一致(要確認)</b>');
- return `<h1>物 件 概 要 書</h1><div class="sub">作成日 ${WA(todayStr())}　／　物件:${esc(p.name)}</div><div class="kpis"><div class="kpi k1"><span>売買価格</span><b>${man(p.price)}</b></div><div class="kpi k2"><span>${p.purpose==='投資'&&p.rent>0?'表面利回り':'㎡単価'}</span><b>${p.purpose==='投資'&&p.rent>0?pct(gross(p)):(isFinite(sqm(p))?man(sqm(p))+'/㎡':'-')}</b></div><div class="kpi k3"><span>${isL?'面積':'築年数・駅徒歩'}</span><b>${isL?esc(p.area)+'㎡':'築'+esc(p.age)+'年・徒歩'+esc(p.walk)+'分'}</b></div><div class="kpi k4 kv-${V2.cls}"><span>登記の判定</span><b>${V2.cls==='良好'?'良好':V2.cls==='注意'?'注意あり':'要精査'}</b></div></div>
- <h2 class="c9">物件写真</h2>${photosHTML(p)}<h2 class="c10">所在地・周辺地図</h2><div style="margin-bottom:3px;font-size:12px">${esc(r.land.place||p.address)}${p.station?' / 最寄駅:'+esc(p.station)+'駅 徒歩'+esc(p.walk)+'分':''}</div>${mapHTML(p)}
- <h2 class="c1">１．物件の表示</h2>${T([['物件名称',esc(p.name),'物件種別',esc(p.type)],['所在地',esc(r.land.place||p.address),'利用目的',esc(p.purpose)],['最寄駅',nz(p.station)?esc(p.station)+'駅 徒歩'+esc(p.walk)+'分':'','現況',nz(d.occupancy)],['売主',nz(d.seller),'取引態様',nz(d.dealType)],['引渡時期',nz(d.delivery),'進捗',esc(p.status)]])}
- <h2 class="c2">２．土地に関する事項</h2>${T([['地番',nz(r.land.lot),'地目',nz(r.land.category)],['地積(登記)',nz(r.land.area,'㎡'),'敷地面積(概要)',nz(d.siteArea,'㎡')],['土地の権利',nz(d.rightType),'区域区分',nz(d.district)],['用途地域',nz(d.zoning),'防火指定',nz(d.fire)],['建ぺい率',nz(d.coverage,'%'),'容積率(指定/実効目安)',nz(d.far,'%')+(isFinite(farLimit(d))&&farLimit(d)<num(d.far)?' / '+farLimit(d).toFixed(0)+'%(道路幅員制限)':'')],['接道状況',(d.roadDir?esc(d.roadDir)+'側 ':'')+nz(d.roadKind)+(d.roadWidth?' 幅員'+esc(d.roadWidth)+'m':'')+(d.frontage?' 接道'+esc(d.frontage)+'m':''),'坪単価',isFinite(tsubo(p))?man(tsubo(p)):'']])}
- ${isL?'':`<h2 class="c3">３．建物に関する事項</h2>${T([['家屋番号',nz(r.bldg.no),'種類',nz(r.bldg.kind)],['構造',nz(r.bldg.struct),'階数・所在階',nz(d.stories)],['床面積(登記)',nz(r.bldg.floorArea,'㎡'),'間取り・戸数',esc(p.layout)],['新築年月日',r.bldg.built?WA(r.bldg.built)+'(築'+Math.floor(yearsBetween(r.bldg.built,todayStr()))+'年)':'築'+esc(p.age)+'年','耐震基準(新築日で簡易判定)',r.bldg.built?(r.bldg.built<'1981-06-01'?'旧耐震(1981年5月以前)':'新耐震'):''],['設備・仕様',nz(d.equip)],['法定耐用年数',L?L.L+'年[住宅用](経過'+L.el+'年/残存 簡便法 約'+L.rem+'年)':'','融資期間の目安',L?(L.loan>0?'残り法定耐用年数 約'+L.loan+'年':'法定耐用年数を超過(金融機関ごとに個別判断)'):''],['管理',nz(d.mgmtForm)+(d.manager?'('+esc(d.manager)+')':''),'駐車場',nz(d.parking)]])}`}
- <h2 class="c4">${isL?'３':'４'}．取引条件</h2>${T([['売買価格',yen(p.price)+'('+man(p.price)+')','㎡単価',isFinite(sqm(p))?yen(sqm(p)):''],['管理費・修繕積立金',p.mgmt?yen(p.mgmt)+'/月':'','固定資産税等',p.tax?yen(p.tax)+'/年':''],['周辺環境・学区',nz(d.school)]])}
- ${p.purpose==='投資'&&p.rent>0?`<h2 class="c5">${isL?'４':'５'}．収益に関する事項(参考)</h2>${T([['満室想定賃料',yen(p.rent)+'/月('+yen(p.rent*12)+'/年)','表面利回り',pct(gross(p))],['年間経費(管理費・税)',yen(p.mgmt*12+p.tax),'実質利回り(簡易)',pct(net(p))]])}<p style="font-size:11px">空室損失・運営費・大規模修繕は含まない概算です。</p>`:''}
- <h2 class="c6">${isL?(p.purpose==='投資'&&p.rent>0?'５':'４'):(p.purpose==='投資'&&p.rent>0?'６':'５')}．登記記録の概要</h2>${T([['所有者(甲区)',ownTxt,'売主との照合',sellOk],['担保権(乙区)',mort.length?mort.length+'件(合計 '+yen(msum)+')':'なし',' 登記情報取得日',r.acquired?WA(r.acquired):'未入力']])}
- <h2 class="c7">留意事項(自動抽出)</h2>${warn.length?`<ul>${warn.map(i=>`<li><span class="lv lv-${i.level}">${i.level}</span> <b>${esc(i.title)}</b>${i.detail?'　'+esc(i.detail):''}</li>`).join('')}</ul>`:'<p>登記・法令面の重大な指摘事項は現時点で検出されていません。</p>'}
- ${p.note?`<h2 class="c8">備考・メモ</h2><p>${esc(p.note)}</p>`:''}${d.special?`<h2 class="c1">特記事項</h2><p>${esc(d.special)}</p>`:''}
- <div class="foot">※ 本書は入力された情報をもとに作成した参考資料です。宅地建物取引業法第35条に基づく重要事項説明書の代わりにはなりません。取引の前に、登記事項証明書の原本、役所調査、宅地建物取引士・司法書士・弁護士等の専門家の確認を受けてください。</div>`}
+ ensure(p);const d=p.det,r=p.reg,A=analyze(p),iss=S.issuer||{},isL=p.type==='土地',isM=p.type==='マンション',inv=p.purpose==='投資'&&p.rent>0,whole=p.type==='アパート'||p.type==='ビル・店舗';
+ const td=new Date(),yyyymmdd=td.getFullYear()+String(td.getMonth()+1).padStart(2,'0')+String(td.getDate()).padStart(2,'0');
+ const no=d.docNo||('S-'+yyyymmdd+'-'+String(p.id).replace(/[^A-Za-z0-9]/g,'').toUpperCase().slice(-6));
+ const town=String(p.address||'').replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/,'').replace(/[0-9０-９].*$/,'');
+ const transit=(d.transit||(p.station?p.station+'駅':''))+(p.station||d.transit?(p.walk?'　徒歩'+esc(p.walk)+'分':''):'');
+ const lot=(r.land.place||'').replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/,'')+(r.land.lot||'');
+ const rw=num(d.roadWidth),fl=farLimit(d);
+ const access=(d.roadDir||d.roadKind||d.roadWidth)?[d.roadDir,d.roadKind,isFinite(rw)?'幅員 '+rw+'m':'',d.frontage?'（接道 '+num(d.frontage)+'m）':''].filter(Boolean).map(esc).join('　'):'';
+ const landA=num(r.land.area),bldA=num(isM?(r.bldg.floorArea||p.area):(d.totalFloor||r.bldg.floorArea||p.area));
+ const floorsTxt=d.floorsAbove?`地上${esc(d.floorsAbove)}階建${d.floorsBelow&&+d.floorsBelow>0?'（地下'+esc(d.floorsBelow)+'階）':''}`:esc(d.stories);
+ const built=r.bldg.built,by=built?+built.slice(0,4):NaN,nowY=td.getFullYear();
+ const chiku=built?`${WAym(built)}（${by}年・築${nowY-by}年）`:(p.age?`築${esc(p.age)}年`:'');
+ const fullRent=p.rent*12,exp=p.mgmt*12+p.tax,cr=isFinite(num(d.costRate))?num(d.costRate):7,tot=p.price*(1+cr/100);
+ const gy=p.price>0&&p.rent>0?fullRent/p.price:NaN,ny=p.price>0&&p.rent>0?(fullRent-exp)/tot:NaN;
+ const jm=jpMoney(p.price);
+ const lines=String(d.special||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);
+ A.filter(i=>i.level==='重大'||i.level==='注意').slice(0,3).forEach(i=>lines.push('【登記・法令】'+i.title));
+ lines.push('本資料は参考情報です。取引に際しては別途重要事項説明書・測量図・登記情報をご確認ください。');
+ const row=(cells)=>`<table class="r"><tr>${cells.map(([k,v,w])=>`<th>${k}</th><td${w?` colspan="${w}"`:''}>${v||'&nbsp;'}</td>`).join('')}</tr></table>`;
+ const photo=(p.photos||[]).find(x=>safeImg(x.src));
+ const extra=(p.photos||[]).filter(x=>safeImg(x.src)).slice(1);
+ const ok=!!(S.issuer&&(iss.company||iss.name));
+ return `<div class="hd"><div class="l">${iss.company?`<span class="co">${esc(iss.company)}</span><span class="vbar"></span>`:''}<h1>物 件 概 要 書</h1></div><div class="r">${esc(no)}<small>作成日：${ymd()}</small></div></div>
+ <div class="grp">${row([['物件名',`<b style="font-size:12pt">${esc(p.name)}</b>${town?` <span class="mut">${esc(town)}</span>`:''}`,33]])}
+ ${row([['所在地',esc(p.address),1],['地番',esc(lot),1]])}
+ ${row([['交通',transit,3]])}</div>
+ <div class="pricebox"><div class="k">価格</div><div class="v"><div class="big">${p.price>0?p.price.toLocaleString('ja-JP'):'-'}<small>円</small>${jm?`<i>（${jm}）</i>`:''}</div>
+ <div class="sub">${d.occupancy?`<span class="badge">${esc(d.occupancy)}</span>`:''}${inv?`表面利回り ${pct(gy)}　｜　実質利回り ${pct(ny)}　｜　`:(isFinite(tsubo(p))?`坪単価 ${man(tsubo(p))}　｜　`:'')}引渡時期：${esc(d.delivery||'相談')}</div></div></div>
+ <div class="band">土　　地</div>
+ <div class="grp">${row([['権利',esc(d.rightType)],['地目',esc(r.land.category)],['公簿面積',fmtArea(landA)]])}${row([['接道',access,5]])}</div>
+ ${isL?'':`<div class="band">建　　物</div><div class="grp">
+ ${row([['種類',esc(r.bldg.kind||p.type)+(whole?'（一棟）':''),2],['構造',[STRUCT_LABEL[r.bldg.struct]||esc(r.bldg.struct),floorsTxt,esc(d.roof)].filter(Boolean).join('　'),2]])}
+ ${row([['築年月',chiku,2],[isM?'専有面積':'延床面積',fmtArea(bldA),2]])}
+ <table class="r"><tr><th>${whole?'総戸数':'間取り'}</th><td>${esc(whole?d.units:p.layout)||'&nbsp;'}</td><th>総階数</th><td>${floorsTxt||'&nbsp;'}</td><th>EV</th><td>${esc(d.elevator)||'&nbsp;'}</td></tr></table>
+ ${row([['家屋番号',esc(r.bldg.no),2],['検査済証',esc(d.inspection),2]])}</div>`}
+ ${inv?`<div class="band">収　益　情　報</div><div class="grp">
+ <table class="r"><tr><th>満室想定賃料</th><td>${yen(p.rent)} / 月</td><th>現況賃料</th><td>${d.currentRent?yen(num(d.currentRent))+(d.occupancy&&/稼働|空室|賃貸/.test(d.occupancy)?'（'+esc(d.occupancy)+'）':''):'&nbsp;'}</td><th>稼働率</th><td>${d.occupancyRate?esc(d.occupancyRate)+'%':'&nbsp;'}</td></tr></table>
+ <table class="r"><tr><th>表面利回り</th><td>${pct(gy)}</td><th>実質利回り</th><td>${pct(ny)}</td><td colspan="2" class="mut sm">※実質＝（年間賃料－管理費等諸経費）÷取得総費用×100（諸費用${cr}%で試算）</td></tr></table></div>`
+ :`<div class="band">取　引　条　件</div><div class="grp">${row([['管理費等',p.mgmt?yen(p.mgmt)+' / 月':'',2],['固定資産税等',p.tax?yen(p.tax)+' / 年':'',2]])}${row([['管理',esc([d.mgmtForm,d.manager].filter(Boolean).join('　')),2],['駐車場',esc(d.parking),2]])}</div>`}
+ <div class="band">法　規　制</div><div class="grp">
+ <table class="r"><tr><th>用途地域</th><td>${esc(d.zoning)||'&nbsp;'}</td><th>建蔽率</th><td>${d.coverage?esc(d.coverage)+'%':'&nbsp;'}</td><th>容積率</th><td>${d.far?esc(d.far)+'%':'&nbsp;'}${isFinite(fl)&&fl<num(d.far)?`<span class="mut sm">（前面道路幅員により約${fl.toFixed(0)}%）</span>`:''}</td></tr></table>
+ ${row([['防火指定',esc(d.fire),2],['高度地区',esc(d.heightDistrict),2]])}${d.district&&d.district!=='市街化区域'?row([['区域区分',esc(d.district),5]]):''}</div>
+ <div class="band">特　記　事　項</div><div class="tokki">${lines.map((t,i)=>`<p>・${CIRC[i]||i+1+'.'} ${esc(t)}</p>`).join('')}</div>
+ <div class="band">地　図　（${esc(p.address)}）</div><div class="pan"><div>${photo?`<img class="ph" alt="${esc(photo.cap||'物件写真')}" src="${esc(photo.src)}">`:`<div class="ph-empty">写真が未登録です</div>`}</div><div>${mapHTML(p,512,320,true)}</div></div>
+ <div class="ft"><div>${ok?`<b>${esc(iss.company||'')}</b>${iss.role?`　｜　${esc(iss.role)}`:''}<br>${[iss.name,iss.tel?'Tel：'+esc(iss.tel):'',iss.email?'Email：'+esc(iss.email):''].filter(Boolean).join('　｜　')}`:''}</div>
+ <div class="n">※本資料は参考情報です。取引に際しては別途重要事項説明書をご確認ください。<br>※記載内容は調査時点のものです。登記情報・法令制限等は最新情報をご確認ください。</div></div>
+ ${extra.length?`<div class="pg2"><div class="band">物　件　写　真</div><div class="ph-grid g3">${extra.map(x=>`<figure><img alt="${esc(x.cap||'')}" src="${esc(x.src)}"><figcaption>${esc(x.cap||'')}</figcaption></figure>`).join('')}</div></div>`:''}`}
+
 function docTouki(p){
  ensure(p);const r=p.reg,A=analyze(p),V2=verdict(A),isL=p.type==='土地';
  const kou=[...r.kou].sort((a,b)=>String(a.scope||'').localeCompare(String(b.scope||''),'ja')||(+a.no||0)-(+b.no||0)),own=ownership(p).own.filter(e=>e.date).sort((a,b)=>a.date.localeCompare(b.date));
@@ -610,6 +667,7 @@ function docTab(){
  const p=ensure(byId(docId)),r=p.reg;
  const sel=(path,label,opts)=>`<label>${label}<select data-path="${path}"><option value=""></option>${opts.map(o=>`<option ${getP(p,path)===o?'selected':''}>${o}</option>`).join('')}</select></label>`;
  const tx=(path,label,type='text',x='')=>`<label>${label}<input data-path="${path}" type="${type}" value="${esc(getP(p,path))}" ${x}></label>`;
+ const gx=(path,label)=>`<label>${label}<input data-gpath="${path}" value="${esc(getP(S,path))}"></label>`;
  const ta=(path,label)=>`<label class="w">${label}<textarea data-path="${path}" rows="2">${esc(getP(p,path))}</textarea></label>`;
  const tbl=(list,cols)=>`<div class="scroll"><table class="tbl-in"><tr>${cols.map(c=>`<th>${c[1]}</th>`).join('')}<th>抹消済</th><th></th></tr>${r[list].map((e,i)=>`<tr>${cols.map(c=>`<td>${c[2]==='select'?`<select data-list="${list}" data-i="${i}" data-f="${c[0]}" style="width:${c[3]}px">${c[4].map(o=>`<option value="${o}" ${(e[c[0]]||'')===o?'selected':''}>${o||'共通(一体)'}</option>`).join('')}</select>`:`<input data-list="${list}" data-i="${i}" data-f="${c[0]}" type="${c[2]}" value="${esc(e[c[0]])}" style="width:${c[3]}px">`}</td>`).join('')}<td><input type="checkbox" data-list="${list}" data-i="${i}" data-f="cleared" ${e.cleared?'checked':''}></td><td><button class="btn dng" data-del="${list}:${i}" style="padding:2px 8px">×</button></td></tr>`).join('')}</table></div><button class="btn" data-add="${list}" style="margin-top:6px">＋ 行を追加</button>`;
  const sec=(id,title,body)=>`<details class="card noprint" data-sec="${id}" ${openSec[id]?'open':''}><summary>${title}</summary>${body}</details>`;
@@ -617,12 +675,13 @@ function docTab(){
  <div class="fit"><div class="seg"><button data-kind="gaiyo" class="${docKind==='gaiyo'?'on':''}">物件概要書</button><button data-kind="touki" class="${docKind==='touki'?'on':''}">登記分析書</button></div></div>
  <button class="btn pri fit" id="pr">印刷 / PDF保存</button><button class="btn fit" id="dh">HTML保存</button></div>
  <p class="note" style="margin:8px 0 0">下の入力欄を埋めると、書類と分析がその場で更新されます。入力内容はこのブラウザに自動保存されます。</p></div>
- ${sec('det','概要書の詳細(土地・建物・法令・取引条件)',`<div class="form">${sel('det.dealType','取引態様',['売主','代理','媒介(仲介)'])}${tx('det.seller','売主(登記名義人と照合)')}${sel('det.occupancy','現況',['空家','居住中','賃貸中(オーナーチェンジ)','更地','建築中'])}${tx('det.delivery','引渡時期')}
+ ${sec('det','概要書の詳細(土地・建物・法令・取引条件)',`<div class="form">${tx('det.docNo','管理番号(空欄で自動)')}${tx('det.transit','交通(沿線・駅名。例:東京メトロ日比谷線「六本木」駅)')}${sel('det.dealType','取引態様',['売主','代理','媒介(仲介)'])}${tx('det.seller','売主(登記名義人と照合)')}${sel('det.occupancy','現況',['満室稼働中','一部空室','賃貸中(オーナーチェンジ)','空家','居住中','更地','建築中'])}${tx('det.delivery','引渡時期')}
  ${sel('det.rightType','土地の権利',['所有権','普通借地権','旧法借地権','定期借地権','地上権'])}${sel('det.district','区域区分',['市街化区域','市街化調整区域','非線引区域','都市計画区域外'])}${tx('det.zoning','用途地域')}${sel('det.fire','防火指定',['防火地域','準防火地域','法22条区域','指定なし'])}
  ${tx('det.coverage','建ぺい率(%)','number')}${tx('det.far','容積率(%)','number')}${tx('det.roadDir','接道方位')}${sel('det.roadKind','道路種別',['公道(42条1項1号)','42条2項道路','位置指定道路','私道','その他'])}
  ${tx('det.roadWidth','前面道路幅員(m)','number','step="0.1"')}${tx('det.frontage','接道長さ(m)','number','step="0.1"')}${tx('det.siteArea','敷地面積(㎡)','number','step="0.01"')}${tx('det.footprint','建築面積(㎡)','number','step="0.01"')}
- ${tx('det.totalFloor','延床面積(㎡)','number','step="0.01"')}${tx('det.stories','階数・所在階')}${sel('det.mgmtForm','管理形態',['自主管理','全部委託','一部委託','なし'])}${tx('det.manager','管理会社')}${tx('det.parking','駐車場')}${tx('det.school','周辺環境・学区')}
+ ${tx('det.totalFloor','延床面積(㎡)','number','step="0.01"')}${tx('det.stories','階数・所在階')}${tx('det.floorsAbove','地上階数','number')}${tx('det.floorsBelow','地下階数','number')}${tx('det.roof','屋根形状(陸屋根など)')}${tx('det.units','総戸数・区画(例:5区画)')}${sel('det.elevator','EV',['有','無','要確認'])}${sel('det.inspection','検査済証',['有','無','不明'])}${tx('det.heightDistrict','高度地区')}${tx('det.currentRent','現況賃料(円/月)','number')}${tx('det.occupancyRate','稼働率(%)','number')}${tx('det.costRate','購入諸費用率(%・実質利回りの計算用。空欄は7%)','number','step="0.1"')}${sel('det.mgmtForm','管理形態',['自主管理','全部委託','一部委託','なし'])}${tx('det.manager','管理会社')}${tx('det.parking','駐車場')}${tx('det.school','周辺環境・学区')}
  ${ta('det.equip','設備・仕様')}${ta('det.special','特記事項')}</div>`)}
+ ${sec('iss','発行者情報(概要書の見出しと下部に表示)',`<div class="form">${gx('issuer.company','会社名・屋号')}${gx('issuer.role','肩書(例:Expert Agent)')}${gx('issuer.name','担当者名')}${gx('issuer.tel','電話')}${gx('issuer.email','メール')}</div><p class="note">入力した内容は全物件の概要書に共通で表示されます。</p>`)}
  ${sec('hyo','登記:表題部・取得日',`<div class="form">${tx('reg.acquired','登記情報の取得日','date')}<span></span>${tx('reg.land.place','土地の所在')}${tx('reg.land.lot','地番')}${sel('reg.land.category','地目',['宅地','田','畑','山林','原野','雑種地','公衆用道路','その他'])}${tx('reg.land.area','地積(㎡)','number','step="0.01"')}
  ${tx('reg.bldg.place','建物の所在')}${tx('reg.bldg.no','家屋番号')}${tx('reg.bldg.kind','種類(居宅・共同住宅など)')}${sel('reg.bldg.struct','構造',STRUCTS.concat('その他'))}${tx('reg.bldg.floorArea','床面積(㎡)','number','step="0.01"')}${tx('reg.bldg.built','新築年月日','date')}
  ${tx('reg.joint','共同担保(他の不動産との同時担保の内容)')}</div>`)}
@@ -632,13 +691,14 @@ function docTab(){
  <div class="pe">${p.photos.map((x,i)=>`<div class="it">${safeImg(x.src)?`<img src="${esc(x.src)}" alt="">`:''}<input data-pcap="${i}" value="${esc(x.cap)}" placeholder="キャプション" style="margin-top:4px"><div class="b"><button class="btn" data-pmain="${i}" ${i===0?'disabled':''}>${i===0?'メイン':'メインにする'}</button><button class="btn dng" data-pdel="${i}">削除</button></div></div>`).join('')||'<p class="note">写真は未登録です</p>'}</div>`)}
  ${sec('kou','登記:甲区(所有権に関する事項)',tbl('kou',KOU_COLS))}
  ${sec('otsu','登記:乙区(抵当権など)',tbl('otsu',OTSU_COLS))}
- <div id="doc" class="doc gaiyo"></div>`);
- const pv=()=>{const q=byId(docId);$('#doc').className='doc '+docKind;$('#doc').innerHTML=docKind==='gaiyo'?docGaiyo(q):docTouki(q)};pv();
+ <div id="doc" class="doc sheet"></div>`);
+ const pv=()=>{const q=byId(docId);$('#doc').className=docKind==='gaiyo'?'doc sheet':'doc touki';$('#doc').innerHTML=docKind==='gaiyo'?docGaiyo(q):docTouki(q)};pv();
  const v=$('#view');
  v.addEventListener('toggle',e=>{if(e.target.dataset?.sec)openSec[e.target.dataset.sec]=e.target.open},true);
  const h=e=>{const t=e.target,q=byId(docId);if(!q)return;
   if(t.id==='dp'){docId=t.value;docTab();return}
   if(t.id==='pf'){addPhotos(q,[...t.files]).then(()=>{openSec.map=true;docTab()});return}
+  if(t.dataset.gpath){if(!S.issuer)S.issuer={};setP(S,t.dataset.gpath,t.value);saveSoon();pv();return}
   if(t.dataset.pcap!==undefined){q.photos[+t.dataset.pcap].cap=t.value;saveSoon();pv()}
   else if(t.dataset.path){setP(ensure(q),t.dataset.path,t.value);saveSoon();pv()}
   else if(t.dataset.list){const row=q.reg[t.dataset.list][+t.dataset.i];if(row){row[t.dataset.f]=t.type==='checkbox'?t.checked:t.value;saveSoon();pv()}}};
@@ -676,11 +736,11 @@ function data(){
   else{const R=parseCSV(t);R.shift();let n=0;for(const r of R){const o={id:uid(),fav:false};COLS.forEach((c,i)=>{const v=r[i]??'';o[c]=['walk','price','rent','area','age','mgmt','tax'].includes(c)?(+v||0):v});
    const c=sanitizeProp(o);if(c&&c.name){S.props.push(c);n++}}toast(n+'件を追加しました')}
   save();render()}catch(err){toast('読み込めませんでした')}};
- $('#rs').onclick=()=>{if(confirm('サンプルデータに戻します。現在のデータは失われます。')){localStorage.removeItem(KEY);load();attachSamples();attachGeo();save();render()}};
- $('#rm').onclick=()=>{if(confirm('全データを消去します。よろしいですか？')){S={props:[],cmp:[],sim:{}};save();render()}};
+ $('#rs').onclick=()=>{if(confirm('サンプルデータに戻します。現在のデータは失われます。')){localStorage.removeItem(KEY);load();attachSamples();attachExtra();attachGeo();save();render()}};
+ $('#rm').onclick=()=>{if(confirm('全データを消去します。よろしいですか？')){S={props:[],cmp:[],sim:{},issuer:S.issuer||{}};save();render()}};
  $('#view').onclick=null;
 }
-load();attachSamples();attachGeo();render();
+load();attachSamples();attachExtra();attachGeo();render();
 </script>
 </body>
 </html>
