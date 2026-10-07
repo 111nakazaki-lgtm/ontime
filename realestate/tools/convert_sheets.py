@@ -61,8 +61,8 @@ def cluster_rows(lines):
 
 LEGACY_LABELS = ['物件種別', 'エリア', '所在地', '交通', '延床面積', '専有面積', '用途', '構造', '規模', '構造・規模', '築年月', '現況', '土地面積', '土地権利',
                  '地目', '接道状況', 'バルコニー面積', '間取り', '所在階', '総戸数', '管理形態', '売出価格', '税区分', '坪単価', '取引態様', '引渡し', '価格条件',
-                 '管理費', '修繕積立金', '現況賃料(年)', '表面利回り', '都市計画', '用途地域', '建ぺい率', '容積率', 'その他制限']
-LEGACY_SECTIONS = {'物件基本情報', '建物情報', '敷地情報', '価格・取引情報', '収益情報', '法令制限', '備考・特記事項'}
+                 '管理費', '修繕積立金', '現況賃料(年)', '表面利回り', '都市計画', '用途地域', '建ぺい率', '容積率', 'その他制限', '階数', '入居率', '接道']
+LEGACY_SECTIONS = {'物件基本情報', '建物情報', '敷地情報', '価格・取引情報', '価格・収益情報', '収益情報', '法令制限', '備考・特記事項'}
 LEGACY_NOTE = re.compile(r'^(※\s*本書の内容|CO\s*N\s*F\s*I\s*D\s*E\s*N\s*T\s*I\s*A\s*L)')
 
 
@@ -81,9 +81,12 @@ def parse_legacy(toks):
         elif not iss['company'] and re.search(r'株式会社|Inc', t): iss['company'] = t
         elif not iss['name'] and iss['company'] and t != iss['company']: iss['name'] = t
     m['issuer'] = iss
+    for t in texts:
+        d = re.search(r'作成日[：:]\s*(\d{4})/(\d{1,2})/(\d{1,2})', t)
+        if d: m['docDate'] = '%04d-%02d-%02d' % tuple(map(int, d.groups()))
     vals, cur, section, notes = {}, None, None, []
     for y, x, t in toks[ti + 1:]:
-        n = norm(t)
+        n = norm(t).lstrip('■')
         if n in LEGACY_SECTIONS:
             section = n; cur = None; continue
         if LEGACY_NOTE.match(t): cur = None; section = '終了'; continue
@@ -94,13 +97,13 @@ def parse_legacy(toks):
         if cur is not None and section != '終了': vals[cur].append(t)
     g = lambda k: (' '.join(vals.get(k, [])).strip())
     def val(k):
-        v = g(k); return '' if v in ('-', 'ー', '－') else v
+        v = g(k); return '' if v in ('-', 'ー', '－', '—', '―') else v
     m['kind'] = val('物件種別'); m['address'] = val('所在地')
     tr = val('交通'); m['transit'] = re.sub(r'駅駅', '駅', tr)
     m['floorArea'] = val('延床面積') or val('専有面積'); m['landArea'] = val('土地面積')
-    m['struct'] = val('構造') or val('構造・規模'); m['stories'] = val('規模') or val('所在階')
-    m['built'] = val('築年月'); m['right'] = val('土地権利'); m['category'] = val('地目'); m['access'] = val('接道状況')
-    m['units'] = val('総戸数'); m['dealType'] = val('取引態様'); m['delivery'] = val('引渡し')
+    m['struct'] = val('構造') or val('構造・規模'); m['stories'] = val('規模') or val('所在階') or ((val('階数') + '階建') if re.fullmatch(r'\d+', val('階数')) else val('階数'))
+    m['built'] = val('築年月'); m['right'] = val('土地権利'); m['category'] = val('地目'); m['access'] = val('接道状況') or val('接道')
+    m['units'] = val('総戸数'); m['occRate'] = val('入居率'); m['dealType'] = val('取引態様'); m['delivery'] = val('引渡し')
     m['zoning'] = val('用途地域')
     for k_in, k_out in (('建ぺい率', 'coverage'), ('容積率', 'far')):
         if val(k_in): m[k_out] = val(k_in).replace('%', '').strip()
@@ -113,7 +116,9 @@ def parse_legacy(toks):
     elif pv and pm: m['price'] = int(float(pm.group(1).replace(',', '')) * (1e8 if pm.group(2) else (1e4 if pm.group(4) else 1)) + (float(pm.group(3).replace(',', '') or 0) * 1e4 if pm.group(3) else 0))
     else: m['priceNote'] = '価格要相談'
     other = val('その他制限')
-    m['special'] = (''.join(notes) + ('\n' + other if other else '')).strip()
+    items = [re.sub(r'^・\s*', '', t).strip() for t in notes if t.strip()]
+    if other: items.append(other)
+    m['special'] = '\n'.join(items)
     m['noPhotoText'] = ''
     for need in ('name', 'address'):
         if not m.get(need): warn.append('必須項目を読み取れません: ' + need)
@@ -128,7 +133,7 @@ def parse_rows(lines):
     texts = [t for _, _, t in toks]
     if not any('物件概要書' in norm(t) for t in texts[:12]):
         return None, ['概要書の様式ではありません']
-    if any(norm(t) == '物件基本情報' for t in texts):
+    if any(norm(t).lstrip('■') == '物件基本情報' for t in texts):
         return parse_legacy(toks)
     for t in texts[:8]:
         if re.match(r'^[A-Za-z]-\d{8}-\w+$', t):
@@ -266,6 +271,8 @@ def to_prop(m, photo=None, map_img=None):
     bt = m.get('built', '')
     ym = re.search(r'(\d{4})年', bt); mo = re.search(r'年\s*(\d{1,2})月', bt)
     yr = int(ym.group(1)) if ym else era_to_year(bt)
+    bm = None if (ym or yr) else re.match(r'^(\d{4})(?:[/.\-](\d{1,2}))?(?!\d)', bt)  # 1989/8/10 や 2021 の形式
+    if bm: yr, mo = int(bm.group(1)), (re.match(r'(\d+)', bm.group(2)) if bm.group(2) else None)
     if yr: built = '%04d-%02d-01' % (yr, int(mo.group(1)) if mo else 1)
     am = re.search(r'築\s*(\d+)\s*年', bt)
     land_a, floor_a = to_num(m.get('landArea')), to_num(m.get('floorArea'))
@@ -435,6 +442,9 @@ def main(argv=None):
         if not photo and not m.get('noPhotoText') and not m.get('legacy'): warn.append('写真を取り出せませんでした')
         if not map_img: warn.append('地図の画像を取り出せませんでした')
         if m.get('legacy'): warn.append('旧様式から変換（元の書類にない項目は空欄）')
+        if not m.get('docNo'):  # 旧様式には管理番号がないので、ファイル名の先頭(S-20260511-0156 など)を使う
+            nm_ = re.match(r'^(S-\d{8}-[A-Za-z0-9]+)_', f.name)
+            if nm_: m['docNo'] = nm_.group(1)
         prop = to_prop(m, photo, map_img)
         jobs.append((f, out / rel, prop, m['issuer']))
         log.append((str(f), '読み取りOK' if not warn else '読み取りOK(注意)', ' / '.join(warn)))

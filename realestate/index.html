@@ -813,8 +813,8 @@ const CV={
  DISCLAIMER:/^※\s*(本資料は参考情報|記載内容は調査時点)/,
  ERA:{令和:2018,平成:1988,昭和:1925,大正:1911,明治:1867},
  STRUCT:[['鉄骨鉄筋','鉄骨鉄筋コンクリート造'],['SRC','鉄骨鉄筋コンクリート造'],['鉄筋コンクリート','鉄筋コンクリート造'],['RC','鉄筋コンクリート造'],['軽量鉄骨','軽量鉄骨造(厚3mm超4mm以下)'],['S造','鉄骨造(厚4mm超)'],['鉄骨造','鉄骨造(厚4mm超)'],['木造','木造']],
- LLABELS:['物件種別','エリア','所在地','交通','延床面積','専有面積','用途','構造','規模','構造・規模','築年月','現況','土地面積','土地権利','地目','接道状況','バルコニー面積','間取り','所在階','総戸数','管理形態','売出価格','税区分','坪単価','取引態様','引渡し','価格条件','管理費','修繕積立金','現況賃料(年)','表面利回り','都市計画','用途地域','建ぺい率','容積率','その他制限'],
- LSECTIONS:['物件基本情報','建物情報','敷地情報','価格・取引情報','収益情報','法令制限','備考・特記事項'],
+ LLABELS:['物件種別','エリア','所在地','交通','延床面積','専有面積','用途','構造','規模','構造・規模','築年月','現況','土地面積','土地権利','地目','接道状況','バルコニー面積','間取り','所在階','総戸数','管理形態','売出価格','税区分','坪単価','取引態様','引渡し','価格条件','管理費','修繕積立金','現況賃料(年)','表面利回り','都市計画','用途地域','建ぺい率','容積率','その他制限','階数','入居率','接道'],
+ LSECTIONS:['物件基本情報','建物情報','敷地情報','価格・取引情報','価格・収益情報','収益情報','法令制限','備考・特記事項'],
  LNOTE:/^(※\s*本書の内容|CO\s*N\s*F\s*I\s*D\s*E\s*N\s*T\s*I\s*A\s*L)/,
  MAXPX:1000
 };
@@ -827,13 +827,33 @@ function cvCluster(lines){
  if(cur.length)rows.push(cur);
  return rows.flatMap(r=>r.slice().sort((a,b)=>a[1]-b[1]||a[0]-b[0]));
 }
+/* 部首の字形（⻄⿇⽬ など）を普通の漢字に直す。ラベルの直前で行を分ける（空きが詰まった書類向け） */
+const CV_RAD=/[⺀-⻿⼀-⿟︐-︟]/g;
+let CV_LBL=null;
+function cvSplitLabels(rows){
+ if(!CV_LBL)CV_LBL=[...new Set([...CV.LABELS,...CV.LLABELS])].filter(l=>l.length>=2).sort((a,b)=>b.length-a.length);
+ const out=[];
+ for(const r of rows){
+  const t=r[2];
+  if(/^[・※]/.test(t)||t.includes('｜')||CV.MAPBAND.some(b=>cvNorm(t).startsWith(b))){out.push(r);continue}
+  let cuts=[];
+  for(const l of CV_LBL){let i=t.indexOf(l);while(i>0){const pre=t[i-1],post=t[i+l.length];if(/[\s　]/.test(pre)&&(post===undefined||/[\s　]/.test(post)))cuts.push([i,l.length]);i=t.indexOf(l,i+1)}}
+  if(!cuts.length){out.push(r);continue}
+  cuts=cuts.sort((a,b)=>a[0]-b[0]).filter((c,k,a)=>k===0||c[0]>=a[k-1][0]+a[k-1][1]);
+  let last=0;const parts=[];
+  for(const [i] of cuts){parts.push(t.slice(last,i));last=i}
+  parts.push(t.slice(last));
+  parts.map(x=>x.trim()).filter(Boolean).forEach((x,k)=>out.push([r[0],r[1]+k*.001,x]));
+ }
+ return out;
+}
 /* PDF.js のテキストを「行」にまとめる。[y(上端), x, 文字列]。表のセルの間（大きな空き）は別の行に分ける */
 async function cvPdfLines(pdf){
  const out=[];
  for(let pi=0;pi<pdf.numPages;pi++){
   const pg=await pdf.getPage(pi+1),vp=pg.getViewport({scale:1}),tc=await pg.getTextContent();
   let cur=null;const rows=[];
-  const flush=()=>{if(cur){const t=cur.s.trim();if(t)rows.push({y:cur.top+pi*10000,x:cur.x,end:cur.end,t,single:[...t].length===1})}cur=null};
+  const flush=()=>{if(cur){const t=cur.s.replace(CV_RAD,c=>({'\u2F3E':'戸','\u2EC4':'西','\uFE13':'：','\uFE10':'、','\uFE11':'、','\uFE12':'。','\uFE14':'；'})[c]||c.normalize('NFKC')).trim();if(t)rows.push({y:cur.top+pi*10000,x:cur.x,end:cur.end,t,single:[...t].length===1})}cur=null};
   for(const it of tc.items){
    if(it.str===undefined)continue;
    if(it.hasEOL&&!it.str.trim()){flush();continue}
@@ -870,9 +890,10 @@ function cvParseLegacy(toks){
   else if(!iss.name&&iss.company&&t!==iss.company)iss.name=t;
  }
  m.issuer=iss;
+ for(const t of texts){const d=/作成日[：:]\s*(\d{4})\/(\d{1,2})\/(\d{1,2})/.exec(t);if(d)m.docDate=d[1]+'-'+d[2].padStart(2,'0')+'-'+d[3].padStart(2,'0')}
  const vals={},notes=[];let cur=null,section=null;
  for(const [y,x,t] of toks.slice(ti+1)){
-  const n=cvNorm(t);
+  const n=cvNorm(t).replace(/^■/,'');
   if(CV.LSECTIONS.includes(n)){section=n;cur=null;continue}
   if(CV.LNOTE.test(t)){cur=null;section='終了';continue}
   if(section==='備考・特記事項'){notes.push(t);continue}
@@ -880,12 +901,12 @@ function cvParseLegacy(toks){
   if(cur!==null&&section!=='終了')vals[cur].push(t);
  }
  const g=k=>(vals[k]||[]).join(' ').trim();
- const val=k=>{const v=g(k);return ['-','ー','－'].includes(v)?'':v};
+ const val=k=>{const v=g(k);return ['-','ー','－','—','―'].includes(v)?'':v};
  m.kind=val('物件種別');m.address=val('所在地');m.transit=val('交通').replace(/駅駅/g,'駅');
  m.floorArea=val('延床面積')||val('専有面積');m.landArea=val('土地面積');
- m.struct=val('構造')||val('構造・規模');m.stories=val('規模')||val('所在階');
- m.built=val('築年月');m.right=val('土地権利');m.category=val('地目');m.access=val('接道状況');
- m.units=val('総戸数');m.dealType=val('取引態様');m.delivery=val('引渡し');m.zoning=val('用途地域');
+ m.struct=val('構造')||val('構造・規模');m.stories=val('規模')||val('所在階')||(/^\d+$/.test(val('階数'))?val('階数')+'階建':val('階数'));
+ m.built=val('築年月');m.right=val('土地権利');m.category=val('地目');m.access=val('接道状況')||val('接道');
+ m.units=val('総戸数');m.occRate=val('入居率');m.dealType=val('取引態様');m.delivery=val('引渡し');m.zoning=val('用途地域');
  if(val('建ぺい率'))m.coverage=val('建ぺい率').replace('%','').trim();
  if(val('容積率'))m.far=val('容積率').replace('%','').trim();
  m.curRent=val('現況賃料(年)');if(m.curRent)m.hasIncome=true;
@@ -895,7 +916,7 @@ function cvParseLegacy(toks){
  else if(pv&&pm)m.price=Math.round(parseFloat(pm[1].replace(/,/g,''))*(pm[2]?1e8:(pm[4]?1e4:1))+(pm[3]?parseFloat(pm[3].replace(/,/g,'')||0)*1e4:0));
  else m.priceNote='価格要相談';
  const other=val('その他制限');
- m.special=(notes.join('')+(other?'\n'+other:'')).trim();
+ const nitems=notes.map(t=>t.replace(/^・\s*/,'').trim()).filter(Boolean);if(other)nitems.push(other);m.special=nitems.join('\n');
  m.noPhotoText='';
  for(const k of ['name','address'])if(!m[k])warn.push('必須項目を読み取れません: '+k);
  return [m,warn];
@@ -903,7 +924,7 @@ function cvParseLegacy(toks){
 function cvParse(lines){
  const toks=cvCluster(lines),texts=toks.map(t=>t[2]),m={},warn=[];
  if(!texts.slice(0,12).some(t=>cvNorm(t).includes('物件概要書')))return [null,['概要書の様式ではありません']];
- if(texts.some(t=>cvNorm(t)==='物件基本情報'))return cvParseLegacy(toks);
+ if(texts.some(t=>cvNorm(t).replace(/^■/,'')==='物件基本情報'))return cvParseLegacy(toks);
  for(const t of texts.slice(0,8)){
   if(/^[A-Za-z]-\d{8}-\w+$/.test(t))m.docNo=t;
   const d=/作成日[：:]\s*(\d{4})年(\d{1,2})月(\d{1,2})日/.exec(t);
@@ -996,8 +1017,9 @@ function cvProp(m,photo,mapImg){
  const sf=CV.STRUCT.find(([k])=>st.includes(k)),struct=sf?sf[1]:(st?st.split(/[（(\s　]/)[0]:'');
  const rf=st.match(/(陸屋根|切妻屋根|寄棟屋根|片流れ屋根|瓦屋根|スレート屋根|折板屋根|屋根)/g),roof=rf?rf[rf.length-1]:'';
  const tr=m.transit||'',wm=/徒歩\s*(\d+)\s*分/.exec(tr),sm=/[「『](.+?)[」』]\s*駅/.exec(tr)||/([^\s「」・]+?)駅/.exec(tr);
- let built='';const bt=m.built||'',ym=/(\d{4})年/.exec(bt),mo=/年\s*(\d{1,2})月/.exec(bt),yr=ym?+ym[1]:cvEra(bt),am=/築\s*(\d+)\s*年/.exec(bt);
- if(yr)built=String(yr).padStart(4,'0')+'-'+String(mo?+mo[1]:1).padStart(2,'0')+'-01';
+ let built='';const bt=m.built||'',ym=/(\d{4})年/.exec(bt),mo=/年\s*(\d{1,2})月/.exec(bt),am=/築\s*(\d+)\s*年/.exec(bt);let yr=ym?+ym[1]:cvEra(bt);
+ const bm=(ym||yr)?null:/^(\d{4})(?:[\/.\-](\d{1,2}))?(?!\d)/.exec(bt);let bmo=mo?+mo[1]:1;if(bm){yr=+bm[1];bmo=bm[2]?+bm[2]:1}
+ if(yr)built=String(yr).padStart(4,'0')+'-'+String(bmo).padStart(2,'0')+'-01';
  const landA=cvNum(m.landArea),floorA=cvNum(m.floorArea),stt=m.stories||'';
  const above=/地上\s*(\d+)/.exec(stt),below=/地下\s*(\d+)/.exec(stt),access=m.access||'';
  const road={roadDir:'',roadKind:'',roadWidth:''};
@@ -1077,15 +1099,23 @@ function cvCrop(o,fx0,fx1){
  return c2.toDataURL('image/jpeg',.85);
 }
 /* PDF 1件を読み取る → {m, warn, prop} */
-async function cvRead(buf){
+async function cvRead(buf,fname){
  const pdf=await pdfjsLib.getDocument({data:buf.slice?buf.slice(0):buf}).promise;
- const lines=await cvPdfLines(pdf),[m,warn]=cvParse(lines);
+ let lines=await cvPdfLines(pdf),[m,warn]=cvParse(lines);
+ // 項目名が値に混ざって読めていないときは、項目名の前で区切り直して読み直し、読み取れた項目が増えるほうを使う
+ if(m){
+  const sc=x=>Object.entries(x).filter(([k,v])=>typeof v==='string'&&v&&!['special','photoNote','netNote','noPhotoText'].includes(k)).length;
+  const l2=cvSplitLabels(lines),r2=cvParse(l2);
+  if(r2[0]&&!r2[1].some(w=>w.startsWith('必須'))&&sc(r2[0])>sc(m)){lines=l2;[m,warn]=r2}
+  else if(r2[0]&&warn.some(w=>w.startsWith('必須'))&&!r2[1].some(w=>w.startsWith('必須'))){lines=l2;[m,warn]=r2}
+  }
  if(!m)return {skip:warn[0]};
  if(warn.some(w=>w.startsWith('必須')))return {skip:warn.join(' / ')};
  let photo=null,mapImg=null;
  try{[photo,mapImg]=await cvImages(pdf)}catch(e){}
  if(!photo&&!m.noPhotoText&&!m.legacy)warn.push('写真を取り出せませんでした');
  if(!mapImg)warn.push('地図の画像を取り出せませんでした');
+m.docNo=m.docNo||((/^(S-\d{8}-[A-Za-z0-9]+)_/.exec(fname||''))||[])[1]||undefined;if(!m.docNo)delete m.docNo;
  if(m.legacy)warn.push('旧様式から変換（元の書類にない項目は空欄）');
  return {m,warn,prop:cvProp(m,photo,mapImg),lines};
 }
@@ -1154,7 +1184,7 @@ async function cvRun(files){
   await new Promise(r=>setTimeout(r,0));
   const row={file:f.name,state:'',warn:[]};
   try{
-   const o=await cvRead(new Uint8Array(await f.arrayBuffer()));
+   const o=await cvRead(new Uint8Array(await f.arrayBuffer()),f.name);
    if(o.skip){row.state='スキップ';row.warn=[o.skip]}
    else{row.state=o.warn.length?'変換OK(注意)':'変換OK';row.warn=o.warn;row.prop=o.prop;row.issuer=o.m.issuer;row.zoom=cvFit(row)}
   }catch(e){row.state='スキップ';row.warn=['PDFを読めません: '+(e&&e.message||e)]}
