@@ -55,7 +55,7 @@ def make(photo, text, sub, size, crop_left=0.0, crop_right=0.0):
 
     portrait = h > w
     # 写真が目的の枠より縦長に近いときは、切らずに全体を載せて左右をぼかす
-    contain_wide = (not portrait) and (src.width / src.height < (w / h) * 0.85)
+    contain_wide = (not portrait) and (src.width / src.height < (w / h) * 0.7)
     if contain_wide:
         img = ImageOps.fit(src, size).filter(ImageFilter.GaussianBlur(30))
         img = Image.blend(img, Image.new("RGB", size, (0, 0, 0)), 0.35)
