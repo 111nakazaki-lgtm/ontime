@@ -47,14 +47,22 @@ def wrap(draw, text, font, max_w):
     return lines
 
 
-def make(photo, text, sub, size, crop_left=0.0):
+def make(photo, text, sub, size, crop_left=0.0, crop_right=0.0):
     w, h = size
     src = ImageOps.exif_transpose(Image.open(photo)).convert("RGB")
-    if crop_left:
-        src = src.crop((int(src.width * crop_left), 0, src.width, src.height))
+    if crop_left or crop_right:
+        src = src.crop((int(src.width * crop_left), 0, int(src.width * (1 - crop_right)), src.height))
 
     portrait = h > w
-    if portrait:
+    # 写真が目的の枠より縦長に近いときは、切らずに全体を載せて左右をぼかす
+    contain_wide = (not portrait) and (src.width / src.height < (w / h) * 0.85)
+    if contain_wide:
+        img = ImageOps.fit(src, size).filter(ImageFilter.GaussianBlur(30))
+        img = Image.blend(img, Image.new("RGB", size, (0, 0, 0)), 0.35)
+        pw = int(src.width * h / src.height)
+        img.paste(src.resize((pw, h)), ((w - pw) // 2, 0))
+        fsize = int(w * 0.04)
+    elif portrait:
         # 背景はぼかした拡大写真。写真本体は切らずに幅いっぱいに載せ、下に文字の帯を作る
         img = ImageOps.fit(src, size).filter(ImageFilter.GaussianBlur(30))
         img = Image.blend(img, Image.new("RGB", size, (0, 0, 0)), 0.35)
@@ -69,6 +77,8 @@ def make(photo, text, sub, size, crop_left=0.0):
         img = Image.composite(Image.new("RGB", size, (0, 0, 0)), img, grad.resize(size))
         fsize = int(w * 0.04)
 
+    if not text:
+        return img
     d = ImageDraw.Draw(img)
     margin = int(w * 0.06)
     font = load_font(fsize)
@@ -95,9 +105,10 @@ def make(photo, text, sub, size, crop_left=0.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("photo")
-    ap.add_argument("text")
+    ap.add_argument("text", help="画像に文字を入れない場合は空文字 \"\"")
     ap.add_argument("--sub", default="")
     ap.add_argument("--out", default="out")
+    ap.add_argument("--crop-right", type=float, default=0.0, help="右端を切り落とす割合")
     ap.add_argument("--crop-left", type=float, default=0.0,
                     help="左端を切り落とす割合(0.12=左12%%。写り込んだ人物を除く用)")
     a = ap.parse_args()
@@ -106,7 +117,7 @@ def main():
     stem = Path(a.photo).stem
     for name, size in SIZES.items():
         path = out / f"{stem}_{name}.jpg"
-        make(a.photo, a.text, a.sub, size, a.crop_left).save(path, quality=92)
+        make(a.photo, a.text, a.sub, size, a.crop_left, a.crop_right).save(path, quality=92)
         print(path)
 
 
