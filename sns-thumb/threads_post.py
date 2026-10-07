@@ -5,6 +5,7 @@
 画像は、公開リポジトリにpush済みのサムネの raw URL を使う。
 
   python threads_post.py out/2026-10-07/xxx_threads.jpg "本文"            # 確認のみ(投稿しない)
+  python threads_post.py - "本文" --publish                              # 文章だけを投稿
   python threads_post.py out/2026-10-07/xxx_threads.jpg "本文" --publish  # 実際に投稿
   python threads_post.py --refresh                                        # トークン更新(60日ごと)
 """
@@ -41,21 +42,24 @@ def refresh():
 
 
 def post(path, text, publish):
-    url = RAW.format(branch=BRANCH, path=path.replace("\\", "/"))
     if len(text) > 500:
         sys.exit("Threads の本文は500字までです。")
-    head = requests.head(url, timeout=30)
-    if head.status_code != 200:
-        sys.exit(f"画像が公開URLで見えません({head.status_code}): {url}\n先に push してください。")
-    print("画像URL:", url)
+    text_only = path == "-"
+    params = {"media_type": "TEXT", "text": text}
+    if not text_only:
+        url = RAW.format(branch=BRANCH, path=path.replace("\\", "/"))
+        head = requests.head(url, timeout=30)
+        if head.status_code != 200:
+            sys.exit(f"画像が公開URLで見えません({head.status_code}): {url}\n先に push してください。")
+        print("画像URL:", url)
+        params = {"media_type": "IMAGE", "image_url": url, "text": text}
     print("本文:", text)
     if not publish:
         print("(確認のみ。--publish を付けると投稿します)")
         return
     uid, tok = env("THREADS_USER_ID"), env("THREADS_ACCESS_TOKEN")
-    c = check(requests.post(f"{API}/{uid}/threads", data={
-        "media_type": "IMAGE", "image_url": url, "text": text, "access_token": tok}))
-    time.sleep(10)  # コンテナ処理待ち
+    c = check(requests.post(f"{API}/{uid}/threads", data={**params, "access_token": tok}))
+    time.sleep(10 if not text_only else 3)  # コンテナ処理待ち
     p = check(requests.post(f"{API}/{uid}/threads_publish", data={
         "creation_id": c["id"], "access_token": tok}))
     print("投稿しました。ID:", p["id"])
