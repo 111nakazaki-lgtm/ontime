@@ -19,6 +19,7 @@ except ImportError:  # 古い PyMuPDF
     import fitz as pymupdf
 
 APP = Path(__file__).resolve().parent.parent / "index.html"
+MAX_PX = 1000
 
 LABELS = ['物件名', '所在地', '地番', '交通', '価格', '権利', '地目', '公簿面積', '接道', '種類', '構造', '築年月',
           '延床面積', '専有面積', '総戸数', '間取り', '総階数', 'EV', '家屋番号', '検査済証', '満室想定賃料', '現況賃料',
@@ -57,13 +58,78 @@ def cluster_rows(lines):
     return out
 
 
+
+LEGACY_LABELS = ['物件種別', 'エリア', '所在地', '交通', '延床面積', '専有面積', '用途', '構造', '規模', '構造・規模', '築年月', '現況', '土地面積', '土地権利',
+                 '地目', '接道状況', 'バルコニー面積', '間取り', '所在階', '総戸数', '管理形態', '売出価格', '税区分', '坪単価', '取引態様', '引渡し', '価格条件',
+                 '管理費', '修繕積立金', '現況賃料(年)', '表面利回り', '都市計画', '用途地域', '建ぺい率', '容積率', 'その他制限']
+LEGACY_SECTIONS = {'物件基本情報', '建物情報', '敷地情報', '価格・取引情報', '収益情報', '法令制限', '備考・特記事項'}
+LEGACY_NOTE = re.compile(r'^(※\s*本書の内容|CO\s*N\s*F\s*I\s*D\s*E\s*N\s*T\s*I\s*A\s*L)')
+
+
+def parse_legacy(toks):
+    """旧様式（物件基本情報／建物情報／敷地情報…の2ページ構成）。新様式と同じ形の辞書にそろえる。"""
+    texts = [t for _, _, t in toks]
+    m, warn = {'legacy': True, 'hasBuilding': True}, []
+    ti = next(i for i, t in enumerate(texts) if '物件概要書' in norm(t))
+    head = texts[:ti]
+    tail = texts[ti + 1:]
+    m['name'] = next((t for t in tail if not t.startswith('■')), '')
+    iss = {'company': '', 'role': '', 'name': '', 'tel': '', 'email': '', 'office': ''}
+    for t in head:
+        if re.search(r'Mobile|Tel', t): iss['tel'] = re.sub(r'^(Mobile|Tel)[：:]\\s*', '', t).strip()
+        elif '@' in t: iss['email'] = t.strip()
+        elif not iss['company'] and re.search(r'株式会社|Inc', t): iss['company'] = t
+        elif not iss['name'] and iss['company'] and t != iss['company']: iss['name'] = t
+    m['issuer'] = iss
+    vals, cur, section, notes = {}, None, None, []
+    for y, x, t in toks[ti + 1:]:
+        n = norm(t)
+        if n in LEGACY_SECTIONS:
+            section = n; cur = None; continue
+        if LEGACY_NOTE.match(t): cur = None; section = '終了'; continue
+        if section == '備考・特記事項':
+            notes.append(t); continue
+        if t in LEGACY_LABELS:
+            cur = t; vals.setdefault(cur, []); continue
+        if cur is not None and section != '終了': vals[cur].append(t)
+    g = lambda k: (' '.join(vals.get(k, [])).strip())
+    def val(k):
+        v = g(k); return '' if v in ('-', 'ー', '－') else v
+    m['kind'] = val('物件種別'); m['address'] = val('所在地')
+    tr = val('交通'); m['transit'] = re.sub(r'駅駅', '駅', tr)
+    m['floorArea'] = val('延床面積') or val('専有面積'); m['landArea'] = val('土地面積')
+    m['struct'] = val('構造') or val('構造・規模'); m['stories'] = val('規模') or val('所在階')
+    m['built'] = val('築年月'); m['right'] = val('土地権利'); m['category'] = val('地目'); m['access'] = val('接道状況')
+    m['units'] = val('総戸数'); m['dealType'] = val('取引態様'); m['delivery'] = val('引渡し')
+    m['zoning'] = val('用途地域')
+    for k_in, k_out in (('建ぺい率', 'coverage'), ('容積率', 'far')):
+        if val(k_in): m[k_out] = val(k_in).replace('%', '').strip()
+    m['curRent'] = val('現況賃料(年)')
+    if m['curRent']: m['hasIncome'] = True
+    if val('表面利回り'): m['grossText'] = val('表面利回り')
+    pv = val('売出価格')
+    pm = re.match(r'^([\\d,\\.]+)\\s*(億)?\\s*([\\d,]*)\\s*(万)?円', pv) if pv else None
+    if pv and re.match(r'^[\\d,]+円$', pv): m['price'] = int(re.sub(r'[^\\d]', '', pv))
+    elif pv and pm: m['price'] = int(float(pm.group(1).replace(',', '')) * (1e8 if pm.group(2) else (1e4 if pm.group(4) else 1)) + (float(pm.group(3).replace(',', '') or 0) * 1e4 if pm.group(3) else 0))
+    else: m['priceNote'] = '価格要相談'
+    other = val('その他制限')
+    m['special'] = (''.join(notes) + ('\n' + other if other else '')).strip()
+    m['noPhotoText'] = ''
+    for need in ('name', 'address'):
+        if not m.get(need): warn.append('必須項目を読み取れません: ' + need)
+    return m, warn
+
+
+
 def parse_rows(lines):
     """行データ [(y, x, text)] -> (項目の辞書, 警告のリスト)。画像は含まない。"""
     toks = cluster_rows(lines)
     m, warn = {}, []
     texts = [t for _, _, t in toks]
-    if not any('物件概要書' in norm(t) for t in texts[:8]):
+    if not any('物件概要書' in norm(t) for t in texts[:12]):
         return None, ['概要書の様式ではありません']
+    if any(norm(t) == '物件基本情報' for t in texts):
+        return parse_legacy(toks)
     for t in texts[:8]:
         if re.match(r'^[A-Za-z]-\d{8}-\w+$', t):
             m['docNo'] = t
@@ -76,6 +142,8 @@ def parse_rows(lines):
         if pm:
             m['price'] = int(pm.group(1).replace(',', '')); m['priceText'] = pm.group(2)
             del toks[i]; break
+        if re.match(r'^価格\s*(要相談|未定|応相談|相談)', t):
+            m['priceNote'] = t.replace(' ', ''); del toks[i]; break
     # フッター（発行者情報）の開始位置
     foot = next((i for i, (_, _, t) in enumerate(toks) if '｜' in t and re.search(r'Expert|Tel|Inc|株式会社', t)), None)
     footer = toks[foot:] if foot is not None else []
@@ -84,12 +152,17 @@ def parse_rows(lines):
     for y, x, t in body:
         n = norm(t)
         if n in SECTIONS or n.startswith(MAPBAND):
-            section = '地図' if n.startswith(MAPBAND) else n; cur = None; continue
+            section = '地図' if n.startswith(MAPBAND) else n; cur = None
+            if section == '収益情報': m['hasIncome'] = True
+            if section == '建物': m['hasBuilding'] = True
+            continue
         if section == '特記事項':
             if t.startswith('・') or bullets:
                 bullets.append(t); continue
         if section == '地図':
-            if not DISCLAIMER.match(t):
+            if re.match(r'^写真は.*(ご案内|準備|未登録)', t):
+                m['noPhotoText'] = t
+            elif not DISCLAIMER.match(t):
                 mapnote.append(t)
             continue
         if t in LABELS:
@@ -97,15 +170,19 @@ def parse_rows(lines):
         if cur and not DISCLAIMER.match(t):
             vals[cur].append(t)
     v = lambda k: ' '.join(vals.get(k, [])).strip()
-    m['name'] = (vals.get('物件名') or [''])[0]
+    nm = (vals.get('物件名') or [''])[0]
+    sp = re.match(r'^(.*)\u3000([^\u3000]+)$', nm)
+    m['name'] = sp.group(1).strip() if sp and re.search(r'[都道府県市区町村郡]', sp.group(2)) and len(sp.group(2)) <= 24 else nm
     # 価格の下の行：現況（バッジ）・利回り・引渡時期
     price_block = vals.get('価格', [])
     for t in price_block:
         if '表面利回り' in t or '引渡時期' in t:
-            g = re.search(r'表面利回り\s*([\d.]+%)', t); n_ = re.search(r'実質利回り\s*([\d.]+%[^\s｜]*)', t); dl = re.search(r'引渡時期[：:]\s*(\S+)', t)
+            g = re.search(r'表面利回り\s*([^\s｜\u3000]+)', t); n_ = re.search(r'実質利回り\s*([^\s｜\u3000（]+(?:（[^）]*）)?)', t); dl = re.search(r'引渡時期[：:]\s*(\S+)', t)
             if g: m['grossText'] = g.group(1)
             if n_: m['netText'] = n_.group(1)
             if dl: m['delivery'] = dl.group(1)
+            pre = re.split(r'表面利回り|引渡時期', t)[0].strip()
+            if pre and len(pre) <= 12 and 'badge' not in m: m['badge'] = pre
         elif len(t) <= 12 and 'badge' not in m:
             m['badge'] = t
     for k_in, k_out in [('所在地', 'address'), ('地番', 'lot'), ('権利', 'right'), ('地目', 'category'), ('種類', 'kind'), ('家屋番号', 'bldgNo'),
@@ -118,6 +195,7 @@ def parse_rows(lines):
     m['transit'] = v('交通'); m['access'] = v('接道'); m['struct'] = v('構造'); m['built'] = v('築年月')
     m['landArea'] = v('公簿面積'); m['floorArea'] = v('延床面積') or v('専有面積')
     m['fullRent'] = v('満室想定賃料'); m['curRent'] = v('現況賃料')
+    m['rentLabelsSeen'] = bool(vals.get('満室想定賃料') or vals.get('現況賃料') or vals.get('満室想定利回り'))
     nv = vals.get('実質利回り', [])
     if nv:
         m.setdefault('netText', nv[0])
@@ -149,8 +227,9 @@ def parse_rows(lines):
     if o: iss['office'] = o.group(1).strip()
     if dl: m['dealType'] = dl.group(1)
     m['issuer'] = iss
-    for need in ('name', 'price', 'address'):
+    for need in ('name', 'address'):
         if not m.get(need): warn.append('必須項目を読み取れません: ' + need)
+    if not m.get('price') and not m.get('priceNote'): warn.append('必須項目を読み取れません: price')
     return m, warn
 
 
@@ -177,7 +256,7 @@ def map_type(kind, struct_text, stories):
 def to_prop(m, photo=None, map_img=None):
     """読み取り結果 -> アプリの物件データ（sanitizeProp に渡す形）。"""
     kind = m.get('kind', '')
-    ptype = map_type(kind, m.get('struct', ''), m.get('stories', ''))
+    ptype = map_type(kind, m.get('struct', ''), m.get('stories', '')) if (kind or m.get('hasBuilding')) else '土地'
     st = m.get('struct', '')
     struct = next((v for k, v in STRUCT_MAP if k in st), re.split(r'[（(\s　]', st)[0] if st else '')
     roof = (re.findall(r'(陸屋根|切妻屋根|寄棟屋根|片流れ屋根|瓦屋根|スレート屋根|折板屋根|屋根)', st) or [''])[-1]
@@ -202,7 +281,7 @@ def to_prop(m, photo=None, map_img=None):
         road['roadKind'] = ' '.join(parts)
     elif access:
         road['roadKind'] = access
-    cur_rent = to_num(m.get('curRent')); full_rent = to_num(m.get('fullRent'))
+    cur_rent = 0 if m.get('legacy') else to_num(m.get('curRent')); full_rent = to_num(m.get('fullRent'))
     det = {
         'docNo': m.get('docNo', ''), 'docDate': m.get('docDate', ''), 'transit': re.sub(r'[\s　]*徒歩.*$', '', tr).strip(),
         'rightType': m.get('right', ''), 'zoning': m.get('zoning', ''), 'coverage': m.get('coverage', ''), 'far': m.get('far', ''),
@@ -211,8 +290,10 @@ def to_prop(m, photo=None, map_img=None):
         'occupancy': m.get('badge', ''), 'special': m.get('special', ''), 'photoNote': m.get('photoNote', ''),
         'dealType': m.get('dealType', ''), 'grossText': m.get('grossText', ''), 'netText': m.get('netText', ''), 'netNote': m.get('netNote', ''),
         'occupancyRate': (m.get('occRate', '') or '').replace('%', '').strip(), 'currentRent': str(int(cur_rent)) if cur_rent else '',
+        'builtText': ('' if built else (bt if bt and not am else '')), 'priceNote': m.get('priceNote', ''), 'priceText': m.get('priceText', ''), 'showIncome': '1' if m.get('hasIncome') else '',
+        'fullRentText': m.get('fullRent', ''), 'currentRentText': (m.get('curRent', '') + '（年額）') if (m.get('legacy') and m.get('curRent')) else m.get('curRent', ''), 'noPhotoText': m.get('noPhotoText', ''),
         'noAuto': '1',  # 元の書類にない自動コメント・実効容積率の注記は付けない
-        'noFullRent': '' if full_rent else ('1' if cur_rent else ''), **road,
+        'noFullRent': '' if full_rent else ('1' if (cur_rent or m.get('legacy')) else ''), **road,
     }
     if above:
         det['floorsAbove'] = above.group(1); det['floorsBelow'] = below.group(1) if below else ''
@@ -224,12 +305,24 @@ def to_prop(m, photo=None, map_img=None):
         'purpose': '投資' if (full_rent or cur_rent or m.get('grossText')) else '居住', 'status': '検討中',
         'price': m.get('price', 0), 'rent': full_rent or cur_rent, 'area': (land_a if ptype == '土地' else floor_a),
         'layout': m.get('layout', ''), 'age': int(am.group(1)) if am else 0, 'mgmt': 0, 'tax': 0, 'note': '', 'det': det,
-        'reg': {'acquired': '', 'joint': '', 'land': {'place': '', 'lot': m.get('lot', ''), 'category': m.get('category', ''), 'area': str(land_a) if land_a else ''},
-                'bldg': {'place': '', 'no': m.get('bldgNo', ''), 'kind': kind, 'struct': struct, 'floorArea': str(floor_a) if floor_a else '', 'built': built}, 'kou': [], 'otsu': []},
+        'reg': {'acquired': '', 'joint': '', 'land': {'place': '', 'lot': m.get('lot', ''), 'category': m.get('category', ''), 'area': str(land_a) if land_a else (m.get('landArea') or '')},
+                'bldg': {'place': '', 'no': m.get('bldgNo', ''), 'kind': kind, 'struct': struct, 'floorArea': str(floor_a) if floor_a else (m.get('floorArea') or ''), 'built': built}, 'kou': [], 'otsu': []},
     }
     if photo: p['photos'] = [{'src': photo, 'cap': ''}]
     if map_img: p['mapImg'] = map_img
     return p
+
+
+def crop_uri(doc, xref, fx0, fx1):
+    """元の書類で枠からはみ出して隠れていた部分を切り落とした画像（横方向の割合 fx0〜fx1 だけ残す）。"""
+    pix = pymupdf.Pixmap(doc, xref)
+    if pix.alpha: pix = pymupdf.Pixmap(pix, 0)
+    if pix.n >= 4 or (pix.colorspace is not None and pix.colorspace.n >= 4): pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+    x0, x1 = max(0, int(round(fx0 * pix.width))), min(pix.width, int(round(fx1 * pix.width)))
+    clip = pymupdf.IRect(x0, 0, max(x0 + 1, x1), pix.height)
+    k = min(1.0, MAX_PX / max(clip.width, clip.height))  # 長辺を MAX_PX 以下に縮小（ファイルサイズを抑える）
+    cut = pymupdf.Pixmap(pix, max(1, int(clip.width * k)), max(1, int(clip.height * k)), clip)
+    return 'data:image/jpeg;base64,' + base64.b64encode(cut.tobytes('jpeg', jpg_quality=85)).decode()
 
 
 def data_uri(doc, xref):
@@ -243,24 +336,40 @@ def data_uri(doc, xref):
     return 'data:image/png;base64,' + base64.b64encode(pix.tobytes('png')).decode()
 
 
+def classify_images(cands, page_w):
+    """(x0, x1, 面積, xref) の一覧 -> (写真の xref, 地図の xref)。中心が右寄り=地図、左寄り=写真。"""
+    photo = [c for c in cands if (c[0] + c[1]) / 2 < page_w * 0.45]
+    mp = [c for c in cands if (c[0] + c[1]) / 2 > page_w * 0.55]
+    pick = lambda l: max(l, key=lambda c: c[2])[3] if l else None
+    return pick(photo), pick(mp)
+
+
 def read_pdf(path):
     doc = pymupdf.open(str(path))
     page = doc[0]
     lines = []
-    for b in page.get_text('dict')['blocks']:
-        for l in b.get('lines', []):
-            t = ''.join(s['text'] for s in l['spans']).strip()
-            if t: lines.append((l['bbox'][1], l['bbox'][0], t))
-    imgs = []
+    for pi, pg in enumerate(doc):  # 複数ページの書類（旧様式）は、2ページ目以降の文字も続けて読む
+        for b in pg.get_text('dict')['blocks']:
+            for l in b.get('lines', []):
+                t = ''.join(s['text'] for s in l['spans']).strip()
+                if t: lines.append((l['bbox'][1] + pi * 10000, l['bbox'][0], t))
+    cands = []
     for im in page.get_images(full=True):
         xref = im[0]
         for r in page.get_image_rects(xref):
             if r.width > 80 and r.height > 80 and im[2] >= 300:
-                imgs.append((r.x0, xref)); break
-    imgs.sort()
-    photo = data_uri(doc, imgs[0][1]) if imgs else None
-    map_img = data_uri(doc, imgs[1][1]) if len(imgs) > 1 else None
-    return lines, photo, map_img
+                cands.append((r.x0, r.x1, r.width * r.height, xref)); break
+    W = page.rect.width
+    photo_x, map_x = classify_images([(a, b, ar, x) for a, b, ar, x in cands], W)
+    box = {c[3]: (c[0], c[1]) for c in cands}
+
+    def uri(xref, lo, hi):
+        if not xref: return None
+        x0, x1 = box[xref]
+        fx0, fx1 = max(0.0, (lo - x0) / (x1 - x0)), min(1.0, (hi - x0) / (x1 - x0))
+        try: return crop_uri(doc, xref, fx0 if fx0 > 0.01 else 0.0, fx1 if fx1 < 0.99 else 1.0)  # 枠で隠れていた部分は落とし、大きい画像は縮小
+        except Exception: return data_uri(doc, xref)
+    return lines, uri(photo_x, 0, W / 2), uri(map_x, W / 2, W)
 
 
 def render_all(jobs, args):
@@ -276,7 +385,11 @@ def render_all(jobs, args):
                 S.issuer = issuer; const p = sanitizeProp(prop); S.props = [p];
                 return '<!doctype html><html lang="ja"><meta charset="utf-8"><title>物件概要書 - ' + esc(p.name) + '</title><style>body{margin:0;font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}' + DOC_CSS + st.textContent + '</style><body><div id="doc" class="doc sheet">' + docGaiyo(ensure(p)) + '</div></body></html>' }""", [prop, issuer])
             pg = browser.new_page()
+            pg.set_viewport_size({'width': 726, 'height': 1000})
             pg.set_content(html_doc, wait_until='load'); pg.emulate_media(media='print')
+            h = pg.evaluate("document.querySelector('.doc').getBoundingClientRect().height")
+            if h > 1030:  # A4 1ページ(余白9mm)に収まらないときは、全体を少し縮小する
+                pg.evaluate("z => { document.querySelector('.doc').style.zoom = z }", 1030 / h)
             dst.parent.mkdir(parents=True, exist_ok=True)
             pg.pdf(path=str(dst), format='A4', print_background=True, prefer_css_page_size=True)
             n_pages = len(pymupdf.open(str(dst)))
@@ -316,8 +429,9 @@ def main(argv=None):
             log.append((str(f), 'スキップ', warn[0])); continue
         if any(w.startswith('必須') for w in warn):
             log.append((str(f), 'スキップ', ' / '.join(warn))); continue
-        if not photo: warn.append('写真を取り出せませんでした')
+        if not photo and not m.get('noPhotoText') and not m.get('legacy'): warn.append('写真を取り出せませんでした')
         if not map_img: warn.append('地図の画像を取り出せませんでした')
+        if m.get('legacy'): warn.append('旧様式から変換（元の書類にない項目は空欄）')
         prop = to_prop(m, photo, map_img)
         jobs.append((f, out / rel, prop, m['issuer']))
         log.append((str(f), '読み取りOK' if not warn else '読み取りOK(注意)', ' / '.join(warn)))

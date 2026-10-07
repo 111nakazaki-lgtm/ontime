@@ -339,7 +339,7 @@ function chart(pts){
 }
 
 /* ---------- 書類（物件概要書・登記分析書） ---------- */
-const DET_DEF={noAuto:'',docDate:'',photoNote:'',grossText:'',netText:'',netNote:'',noFullRent:'',docNo:'',transit:'',floorsAbove:'',floorsBelow:'',roof:'',units:'',elevator:'',inspection:'',heightDistrict:'',currentRent:'',occupancyRate:'',costRate:'',seller:'',dealType:'',occupancy:'',delivery:'',rightType:'所有権',district:'',zoning:'',coverage:'',far:'',fire:'',roadDir:'',roadKind:'',roadWidth:'',frontage:'',siteArea:'',footprint:'',totalFloor:'',stories:'',equip:'',mgmtForm:'',manager:'',parking:'',school:'',special:''};
+const DET_DEF={builtText:'',priceNote:'',priceText:'',fullRentText:'',currentRentText:'',showIncome:'',noPhotoText:'',noAuto:'',docDate:'',photoNote:'',grossText:'',netText:'',netNote:'',noFullRent:'',docNo:'',transit:'',floorsAbove:'',floorsBelow:'',roof:'',units:'',elevator:'',inspection:'',heightDistrict:'',currentRent:'',occupancyRate:'',costRate:'',seller:'',dealType:'',occupancy:'',delivery:'',rightType:'所有権',district:'',zoning:'',coverage:'',far:'',fire:'',roadDir:'',roadKind:'',roadWidth:'',frontage:'',siteArea:'',footprint:'',totalFloor:'',stories:'',equip:'',mgmtForm:'',manager:'',parking:'',school:'',special:''};
 const SAMPLE_X={
  s0:{det:{seller:'山田 太郎',dealType:'媒介(仲介)',occupancy:'空家',delivery:'決済後2週間以内',rightType:'所有権',district:'市街化区域',zoning:'第一種住居地域',coverage:'60',far:'300',fire:'準防火地域',roadDir:'南',roadKind:'公道(42条1項1号)',roadWidth:'8.0',stories:'地上14階建の5階部分',equip:'オートロック・宅配ボックス・床暖房・食洗機',mgmtForm:'全部委託',manager:'(サンプル)管理株式会社',parking:'なし(近隣月極 28,000円)',school:'区立小学校 徒歩6分',special:'修繕積立金は段階増額方式。次回改定予定あり。'},
   reg:{acquired:'2026-09-20',land:{place:'東京都渋谷区○○一丁目',lot:'12番3',category:'宅地',area:'1850.20'},bldg:{place:'東京都渋谷区○○一丁目12番地3',no:'12番3の504',kind:'居宅',struct:'鉄筋コンクリート造',floorArea:'42.5',built:'2020-03-15'},
@@ -553,7 +553,7 @@ const SHEET_CSS=`.doc.sheet{background:#fff;color:#111;max-width:210mm;margin:0 
 .sheet .pricebox .v{padding:5px 12px}.sheet .pricebox .big{font-size:25pt;font-weight:800;line-height:1.15}.sheet .pricebox .big small{font-size:10pt;font-weight:600;margin-left:3px}.sheet .pricebox .big i{font-style:normal;font-size:11pt;font-weight:600;margin-left:12px}
 .sheet .badge{display:inline-block;background:#111;color:#fff;font-weight:700;font-size:7pt;padding:1px 7px;margin-right:9px}.sheet .sub{font-size:8pt;color:#444}.sheet .mut{color:#666;font-weight:400}.sheet .sm{font-size:7pt}
 .sheet .tokki{border:1px solid #999;border-top:0;padding:5px 10px;min-height:16mm}.sheet .tokki p{margin:0 0 3px}
-.sheet .pan{display:grid;grid-template-columns:1fr 1fr;border:1px solid #999;border-top:0}.sheet .pan>div{position:relative;overflow:hidden;background:#e4e8ed;aspect-ratio:512/320}
+.sheet .pan{display:grid;grid-template-columns:1fr 1fr;border:1px solid #999;border-top:0}.sheet .pan>div{position:relative;overflow:hidden;background:#e4e8ed;aspect-ratio:512/300}
 .sheet .pan img.ph{width:100%;height:100%;object-fit:cover;display:block}.sheet .pan .ph-empty{height:100%;display:flex;align-items:center;justify-content:center;border:0;border-radius:0}
 .sheet .pan .mapbox{height:100%;border:0;border-radius:0;aspect-ratio:auto!important}.sheet .pan .attr{position:absolute;right:4px;bottom:2px;font-size:6pt;color:#333;background:rgba(255,255,255,.75);padding:0 3px;z-index:3}
 .sheet .pnote{border:1px solid #999;border-top:0;padding:2px 8px}
@@ -600,7 +600,7 @@ function docGaiyo(p){
  const landA=num(r.land.area),bldA=num(isM?(r.bldg.floorArea||p.area):(d.totalFloor||r.bldg.floorArea||p.area));
  const floorsTxt=d.floorsAbove?`地上${esc(d.floorsAbove)}階建${d.floorsBelow&&+d.floorsBelow>0?'（地下'+esc(d.floorsBelow)+'階）':''}`:esc(d.stories);
  const built=r.bldg.built,by=built?+built.slice(0,4):NaN,nowY=td.getFullYear();
- const chiku=built?`${WAym(built)}（${by}年・築${nowY-by}年）`:(p.age?`築${esc(p.age)}年`:'');
+ const chiku=built?`${WAym(built)}（${by}年・築${nowY-by}年）`:(p.age?`築${esc(p.age)}年`:esc(d.builtText));
  const fullRent=p.rent*12,exp=p.mgmt*12+p.tax,cr=isFinite(num(d.costRate))?num(d.costRate):(isFinite(num(p.inv.cost))?num(p.inv.cost):7),tot=p.price*(1+cr/100);
  const gy=p.price>0&&p.rent>0?fullRent/p.price:NaN,ny=p.price>0&&p.rent>0?(fullRent-exp)/tot:NaN;
  const jm=jpMoney(p.price);
@@ -615,24 +615,24 @@ function docGaiyo(p){
  <div class="grp">${row([['物件名',`<b style="font-size:12pt">${esc(p.name)}</b>${town?` <span class="mut">${esc(town)}</span>`:''}`,33]])}
  ${row([['所在地',esc(p.address),1],['地番',esc(lot),1]])}
  ${row([['交通',transit,3]])}</div>
- <div class="pricebox"><div class="k">価格</div><div class="v"><div class="big">${p.price>0?p.price.toLocaleString('ja-JP'):'-'}<small>円</small>${jm?`<i>（${jm}）</i>`:''}</div>
- <div class="sub">${d.occupancy?`<span class="badge">${esc(d.occupancy)}</span>`:''}${inv?`表面利回り ${esc(d.grossText||pct(gy))}　｜　実質利回り ${esc(d.netText||pct(ny))}　｜　`:(isFinite(tsubo(p))?`坪単価 ${man(tsubo(p))}　｜　`:'')}引渡時期：${esc(d.delivery||'相談')}</div></div></div>
+ <div class="pricebox"><div class="k">価格</div><div class="v"><div class="big">${p.price>0?p.price.toLocaleString('ja-JP')+'<small>円</small>':esc(d.priceNote||'-')}${p.price>0&&(d.priceText||jm)?`<i>（${esc(d.priceText||jm)}）</i>`:''}</div>
+ <div class="sub">${d.occupancy?`<span class="badge">${esc(d.occupancy)}</span>`:''}${inv||d.grossText||d.netText?`表面利回り ${esc(d.grossText||pct(gy))}　｜　実質利回り ${esc(d.netText||pct(ny))}　｜　`:(p.price>0&&isFinite(tsubo(p))?`坪単価 ${man(tsubo(p))}　｜　`:'')}引渡時期：${esc(d.delivery||'相談')}</div></div></div>
  <div class="band">土　　地</div>
- <div class="grp">${row([['権利',esc(d.rightType)],['地目',esc(r.land.category)],['公簿面積',fmtArea(landA)]])}${row([['接道',access,5]])}</div>
+ <div class="grp">${row([['権利',esc(d.rightType)],['地目',esc(r.land.category)],['公簿面積',fmtArea(landA)||esc(r.land.area)]])}${row([['接道',access,5]])}</div>
  ${isL?'':`<div class="band">建　　物</div><div class="grp">
- ${row([['種類',esc(r.bldg.kind||p.type)+(whole&&!/一棟/.test(r.bldg.kind||'')?'（一棟）':''),2],['構造',[STRUCT_LABEL[r.bldg.struct]||esc(r.bldg.struct),floorsTxt,esc(d.roof)].filter(Boolean).join('　'),2]])}
- ${row([['築年月',chiku,2],[isM?'専有面積':'延床面積',fmtArea(bldA),2]])}
+ ${row([['種類',esc(r.bldg.kind||p.type)+(whole&&!/一棟/.test(r.bldg.kind||'')?'（一棟）':''),2],['構造',[STRUCT_LABEL[r.bldg.struct]||esc(r.bldg.struct),floorsTxt,esc(d.roof)].filter((v,i,a)=>v&&a.indexOf(v)===i).join('　'),2]])}
+ ${row([['築年月',chiku,2],[isM?'専有面積':'延床面積',fmtArea(bldA)||esc(isM?r.bldg.floorArea:(d.totalFloor||r.bldg.floorArea)),2]])}
  <table class="r"><tr><th>${whole?'総戸数':'間取り'}</th><td>${esc(whole?d.units:p.layout)||'&nbsp;'}</td><th>総階数</th><td>${floorsTxt||'&nbsp;'}</td><th>EV</th><td>${esc(d.elevator)||'&nbsp;'}</td></tr></table>
  ${row([['家屋番号',esc(r.bldg.no),2],['検査済証',esc(d.inspection),2]])}</div>`}
- ${inv?`<div class="band">収　益　情　報</div><div class="grp">
- <table class="r"><tr><th>満室想定賃料</th><td>${d.noFullRent?'要確認':yen(p.rent)+' / 月'}</td><th>現況賃料</th><td>${d.currentRent?(isFinite(num(d.currentRent))?yen(num(d.currentRent)):esc(d.currentRent))+(d.occupancy&&/稼働|空室|賃貸/.test(d.occupancy)?'（'+esc(d.occupancy)+'）':''):'&nbsp;'}</td><th>稼働率</th><td>${d.occupancyRate?esc(d.occupancyRate)+(isFinite(num(d.occupancyRate))?'%':''):'&nbsp;'}</td></tr></table>
+ ${inv||d.showIncome?`<div class="band">収　益　情　報</div><div class="grp">
+ <table class="r"><tr><th>満室想定賃料</th><td>${d.fullRentText?esc(d.fullRentText):(d.noFullRent||!(p.rent>0)?'要確認':yen(p.rent)+' / 月')}</td><th>現況賃料</th><td>${d.currentRentText?esc(d.currentRentText):d.currentRent?(isFinite(num(d.currentRent))?yen(num(d.currentRent)):esc(d.currentRent))+(d.occupancy&&/稼働|空室|賃貸/.test(d.occupancy)?'（'+esc(d.occupancy)+'）':''):'&nbsp;'}</td><th>稼働率</th><td>${d.occupancyRate?esc(d.occupancyRate)+(isFinite(num(d.occupancyRate))?'%':''):'&nbsp;'}</td></tr></table>
  <table class="r"><tr><th>表面利回り</th><td>${esc(d.grossText||pct(gy))}</td><th>実質利回り</th><td>${esc(d.netText||pct(ny))}</td><td colspan="2" class="mut sm">${esc(d.netNote||('※実質＝（年間賃料－管理費等諸経費）÷取得総費用×100（諸費用'+cr+'%で試算）'))}</td></tr></table></div>`
- :`<div class="band">取　引　条　件</div><div class="grp">${row([['管理費等',p.mgmt?yen(p.mgmt)+' / 月':'',2],['固定資産税等',p.tax?yen(p.tax)+' / 年':'',2]])}${row([['管理',esc([d.mgmtForm,d.manager].filter(Boolean).join('　')),2],['駐車場',esc(d.parking),2]])}</div>`}
+ :(!p.mgmt&&!p.tax&&!d.mgmtForm&&!d.manager&&!d.parking?'':`<div class="band">取　引　条　件</div><div class="grp">${row([['管理費等',p.mgmt?yen(p.mgmt)+' / 月':'',2],['固定資産税等',p.tax?yen(p.tax)+' / 年':'',2]])}${row([['管理',esc([d.mgmtForm,d.manager].filter(Boolean).join('　')),2],['駐車場',esc(d.parking),2]])}</div>`)}
  <div class="band">法　規　制</div><div class="grp">
  <table class="r"><tr><th>用途地域</th><td>${esc(d.zoning)||'&nbsp;'}</td><th>建蔽率</th><td>${d.coverage?esc(d.coverage)+(isFinite(num(d.coverage))?'%':''):'&nbsp;'}</td><th>容積率</th><td>${d.far?esc(d.far)+(isFinite(num(d.far))?'%':''):'&nbsp;'}${!d.noAuto&&isFinite(fl)&&fl<num(d.far)?`<span class="mut sm">（前面道路幅員により約${fl.toFixed(0)}%）</span>`:''}</td></tr></table>
  ${row([['防火指定',esc(d.fire),2],['高度地区',esc(d.heightDistrict),2]])}${d.district&&d.district!=='市街化区域'?row([['区域区分',esc(d.district),5]]):''}</div>
  <div class="band">特　記　事　項</div><div class="tokki">${lines.map((t,i)=>`<p>・${CIRC[i]||i+1+'.'} ${esc(t)}</p>`).join('')}</div>
- <div class="band">地　図　（${esc(p.address)}）</div><div class="pan"><div>${photo?`<img class="ph" alt="${esc(photo.cap||'物件写真')}" src="${esc(photo.src)}">`:`<div class="ph-empty">写真が未登録です</div>`}</div><div>${safeImg(p.mapImg)?`<img class="ph" alt="地図" src="${esc(p.mapImg)}">`:mapHTML(p,512,320,true)}</div></div>${d.photoNote?`<div class="mut sm pnote">${esc(d.photoNote)}</div>`:''}
+ <div class="band">地　図　（${esc(p.address)}）</div><div class="pan"><div>${photo?`<img class="ph" alt="${esc(photo.cap||'物件写真')}" src="${esc(photo.src)}">`:`<div class="ph-empty">${esc(d.noPhotoText||'写真が未登録です')}</div>`}</div><div>${safeImg(p.mapImg)?`<img class="ph" alt="地図" src="${esc(p.mapImg)}">`:mapHTML(p,512,300,true)}</div></div>${d.photoNote?`<div class="mut sm pnote">${esc(d.photoNote)}</div>`:''}
  <div class="ft"><div>${ok?`<b>${esc(iss.company||'')}</b>${iss.role?`　｜　${esc(iss.role)}`:''}<br>${[iss.name,iss.tel?'Tel：'+esc(iss.tel):'',iss.email?'Email：'+esc(iss.email):''].filter(Boolean).join('　｜　')}${iss.office||d.dealType?'<br>'+[iss.office?'事務所：'+esc(iss.office):'',d.dealType?'取引態様：'+esc(d.dealType):''].filter(Boolean).join('　'):''}`:''}</div>
  <div class="n">※本資料は参考情報です。取引に際しては別途重要事項説明書をご確認ください。<br>※記載内容は調査時点のものです。登記情報・法令制限等は最新情報をご確認ください。</div></div>
  ${extra.length?`<div class="pg2"><div class="band">物　件　写　真</div><div class="ph-grid g3">${extra.map(x=>`<figure><img alt="${esc(x.cap||'')}" src="${esc(x.src)}"><figcaption>${esc(x.cap||'')}</figcaption></figure>`).join('')}</div></div>`:''}`}
