@@ -96,7 +96,7 @@ const SAMPLE=[
 let S;
 function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
  if(!S||!Array.isArray(S.props))S={props:SAMPLE.map(p=>({...p})),cmp:[],sim:{}};}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){try{toast('保存できませんでした(ブラウザの保存容量が上限です。写真を減らしてください)')}catch(_){}return false}}
 load();
 let tab='dash';
 let F={q:'',type:'',status:'',purpose:'',maxPrice:'',minYield:'',fav:false,sort:'new'};
@@ -183,6 +183,7 @@ function cards(){
 function card(p){
  const g=gross(p);
  return `<div class="prop" data-id="${p.id}">
+ ${safeImg(p.photos?.[0]?.src)?`<img class="thumb" alt="" src="${esc(p.photos[0].src)}">`:''}
  <div style="display:flex;justify-content:space-between;gap:8px"><h3>${esc(p.name)}</h3><button class="btn" data-a="fav" title="お気に入り" style="padding:0 8px;border:0;font-size:18px;color:${p.fav?'#e8a200':'var(--mute)'}">${p.fav?'★':'☆'}</button></div>
  <div class="price">${man(p.price)}</div>
  <div><span class="chip">${esc(p.type)}</span><span class="chip">${esc(p.purpose)}</span><span class="chip s-${esc(p.status)}">${esc(p.status)}</span>${p.reg?`<span class="vchip v-${verdict(analyze(p)).cls}">登記:${verdict(analyze(p)).cls==='良好'?'良好':verdict(analyze(p)).cls==='注意'?'注意あり':'要精査'}</span>`:''}</div>
@@ -330,7 +331,7 @@ function ensure(p){
  p.det=Object.assign({},DET_DEF,p.det);const r=p.reg=p.reg||{};
  r.land=Object.assign({place:'',lot:'',category:'宅地',area:''},r.land);
  r.bldg=Object.assign({place:'',no:'',kind:'',struct:'',floorArea:'',built:''},r.bldg);
- r.kou=r.kou||[];r.otsu=r.otsu||[];r.acquired=r.acquired||'';r.joint=r.joint||'';return p}
+ r.kou=r.kou||[];r.otsu=r.otsu||[];r.acquired=r.acquired||'';r.joint=r.joint||'';p.geo=Object.assign({lat:'',lng:'',zoom:'16',layer:'std'},p.geo);p.photos=Array.isArray(p.photos)?p.photos:[];return p}
 function attachSamples(){S.props.forEach(p=>{if(SAMPLE_X[p.id]&&!p.reg&&!p.det)Object.assign(p,JSON.parse(JSON.stringify(SAMPLE_X[p.id])))})}
 attachSamples();
 
@@ -421,6 +422,65 @@ function verdict(items){
  const label=c.重大?'要精査(重大な指摘あり)':c.注意?'条件付き(注意点あり)':c.確認?'概ね良好(要確認事項あり)':'良好';
  return {c,score,label,cls:c.重大?'重大':c.注意?'注意':'良好'}}
 
+/* ---------- 地図・写真 ---------- */
+const GEO_DEF={lat:'',lng:'',zoom:'16',layer:'std'};
+const LAYERS={std:['標準地図','png'],pale:['淡色地図','png'],seamlessphoto:['航空写真','jpg']};
+const safeImg=s=>/^data:image\/(jpeg|png|webp|gif|svg\+xml)[;,]/.test(String(s||''))?s:'';
+function svgPhoto(title,sub,c1,c2,kind){
+ let b='';
+ if(kind==='plan')b=`<rect x="120" y="90" width="560" height="330" fill="#fff" stroke="#334" stroke-width="6"/><line x1="400" y1="90" x2="400" y2="270" stroke="#334" stroke-width="4"/><line x1="120" y1="270" x2="680" y2="270" stroke="#334" stroke-width="4"/><line x1="470" y1="270" x2="470" y2="420" stroke="#334" stroke-width="4"/><text x="250" y="190" font-size="26" fill="#334">LDK</text><text x="520" y="190" font-size="26" fill="#334">洋室</text><text x="250" y="355" font-size="26" fill="#334">水廻り</text><text x="540" y="355" font-size="26" fill="#334">収納</text>`;
+ else{let w='';for(let r=0;r<4;r++)for(let c=0;c<5;c++)w+=`<rect x="${250+c*62}" y="${130+r*62}" width="36" height="40" fill="#cfe8ff" stroke="#456" stroke-width="2"/>`;
+  b=`<rect x="0" y="400" width="800" height="100" fill="#8aa17a"/><rect x="230" y="90" width="340" height="320" fill="#f5efe6" stroke="#456" stroke-width="4"/>${w}<rect x="375" y="330" width="50" height="80" fill="#8a5a3a"/><circle cx="640" cy="120" r="40" fill="#ffe28a"/>`}
+ const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500"><defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c1}"/><stop offset="1" stop-color="${c2}"/></linearGradient></defs><rect width="800" height="500" fill="url(#g)"/>${b}<text x="20" y="40" font-size="28" font-family="sans-serif" fill="#123" font-weight="700">${title}</text><text x="20" y="480" font-size="22" font-family="sans-serif" fill="#123">${sub}</text></svg>`;
+ return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)}
+const SAMPLE_G={
+ s0:{geo:{lat:'35.6580',lng:'139.7016',zoom:'16',layer:'std'},photos:[{src:svgPhoto('(サンプル)外観','イメージ図','#9fd0ff','#e8f4ff','ext'),cap:'外観'},{src:svgPhoto('(サンプル)間取り','1LDK 42.5㎡','#fff3d6','#ffe3a8','plan'),cap:'間取り図'}]},
+ s2:{geo:{lat:'34.7456',lng:'135.5319',zoom:'16',layer:'std'},photos:[{src:svgPhoto('(サンプル)外観','軽量鉄骨造 2階建 8戸','#bfe3c6','#eef9f0','ext'),cap:'外観(南東側)'},{src:svgPhoto('(サンプル)配置・間取り','1戸あたりの例','#ffe0e0','#fff1f1','plan'),cap:'間取り(例)'}]},
+ s7:{geo:{lat:'34.9965',lng:'135.7608',zoom:'17',layer:'std'},photos:[{src:svgPhoto('(サンプル)町家 外観','築50年 木造2階建','#e6d3ff','#f7f0ff','ext'),cap:'外観'}]}
+};
+function attachGeo(){S.props.forEach(p=>{const g=SAMPLE_G[p.id];if(g){if(!p.geo)p.geo={...g.geo};if(!p.photos)p.photos=g.photos.map(x=>({...x}))}})}
+attachGeo();
+function tileXY(lat,lng,z){const n=Math.pow(2,z),r=lat*Math.PI/180;return {x:(lng+180)/360*n,y:(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n}}
+function mapHTML(p){
+ const g=p.geo||GEO_DEF,lat=parseFloat(g.lat),lng=parseFloat(g.lng),z=Math.min(18,Math.max(10,parseInt(g.zoom)||16));
+ if(!isFinite(lat)||!isFinite(lng)||Math.abs(lat)>85||Math.abs(lng)>180)return `<div class="ph-empty">位置情報が未設定です(「地図・写真」で住所検索または緯度経度を入力)</div>`;
+ const [ln,ext]=LAYERS[g.layer]||LAYERS.std,key=LAYERS[g.layer]?g.layer:'std',W=768,H=336,c=tileXY(lat,lng,z);
+ const x0=Math.floor(c.x-W/2/256),x1=Math.floor(c.x+W/2/256),y0=Math.floor(c.y-H/2/256),y1=Math.floor(c.y+H/2/256),n=Math.pow(2,z);let t='';
+ for(let ty=y0;ty<=y1;ty++)for(let tx=x0;tx<=x1;tx++){if(ty<0||ty>=n)continue;const px=W/2+(tx-c.x)*256,py=H/2+(ty-c.y)*256,xx=((tx%n)+n)%n;
+  t+=`<img alt="" loading="lazy" src="https://cyberjapandata.gsi.go.jp/xyz/${key}/${z}/${xx}/${ty}.${ext}" style="left:${(px/W*100).toFixed(4)}%;top:${(py/H*100).toFixed(4)}%;width:${(256/W*100).toFixed(4)}%;height:${(256/H*100).toFixed(4)}%">`}
+ const scale={14:'約1:35,000',15:'約1:17,000',16:'約1:8,500',17:'約1:4,300',18:'約1:2,100'}[z]||'';
+ return `<div class="mapbox" style="aspect-ratio:${W}/${H}"><span class="mapoff">地図を読み込めません(オフライン時は表示されません)</span>${t}<i class="pin"></i></div>
+ <div class="mapcap">${esc(ln)}　緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}　${scale}　出典:国土地理院タイル</div>`}
+function photosHTML(p){
+ const ph=(p.photos||[]).filter(x=>safeImg(x.src));
+ if(!ph.length)return `<div class="ph-empty">写真が未登録です(「地図・写真」から追加)</div>`;
+ const [m,...rest]=ph;
+ return `<div class="ph-main"><img alt="${esc(m.cap||'メイン写真')}" src="${esc(m.src)}">${m.cap?`<div class="cap">${esc(m.cap)}</div>`:''}</div>
+ ${rest.length?`<div class="ph-grid">${rest.map(x=>`<figure><img alt="${esc(x.cap||'')}" src="${esc(x.src)}"><figcaption>${esc(x.cap||'')}</figcaption></figure>`).join('')}</div>`:''}`}
+async function shrinkImg(file){return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
+ img.onload=()=>{const k=Math.min(1,1000/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(u);res(c.toDataURL('image/jpeg',0.78))};
+ img.onerror=()=>{URL.revokeObjectURL(u);rej(new Error('img'))};img.src=u})}
+async function addPhotos(p,files){ensure(p);const before=p.photos.length;
+ for(const f of files){if(!/^image\//.test(f.type))continue;if(p.photos.length>=12){toast('写真は12枚までです');break}
+  try{p.photos.push({src:await shrinkImg(f),cap:''})}catch(e){toast('読み込めない画像がありました')}}
+ if(!save()){p.photos.length=before}}
+async function geocode(p){const q=(p.reg?.land.place||p.address||'').trim();if(!q)return toast('所在地を入力してください');
+ try{const r=await fetch('https://msearch.gsi.go.jp/address-search/AddressSearch?q='+encodeURIComponent(q));const j=await r.json();
+  if(!j.length)return toast('住所が見つかりませんでした');const [lng,lat]=j[0].geometry.coordinates;ensure(p);p.geo.lat=lat.toFixed(6);p.geo.lng=lng.toFixed(6);save();toast('位置を設定しました: '+(j[0].properties?.title||q));return true}
+ catch(e){toast('検索できませんでした(ネット接続を確認するか、緯度経度を直接入力)')}}
+const MAP_CSS=`
+.doc .mapbox{position:relative;overflow:hidden;width:100%;background:#dfe6ee;border:1px solid #889;border-radius:6px}.doc .mapbox img{position:absolute;display:block;max-width:none}
+.doc .mapoff{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#667;font-size:12px}
+.doc .pin{position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-22px 0 0 -11px;background:#e53935;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 1px 5px rgba(0,0,0,.5);z-index:2}.doc .pin::after{content:"";position:absolute;left:4px;top:4px;width:6px;height:6px;background:#fff;border-radius:50%}
+.doc .mapcap{font-size:11px;color:#556;margin-top:3px}
+.doc .ph-main{position:relative;border-radius:8px;overflow:hidden;border:1px solid #889;background:#000}.doc .ph-main img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#111}.doc .ph-main .cap{position:absolute;left:0;bottom:0;right:0;background:rgba(0,0,0,.55);color:#fff;padding:3px 10px;font-size:12px}
+.doc .ph-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}.doc .ph-grid figure{margin:0;page-break-inside:avoid}.doc .ph-grid img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border:1px solid #889;border-radius:6px}.doc .ph-grid figcaption{font-size:11px;text-align:center;color:#334}
+.doc .ph-empty{border:2px dashed #99a;border-radius:8px;padding:22px;text-align:center;color:#667;font-size:12px}
+.doc.gaiyo h2.c9{background:#e07b1a}.doc.gaiyo h2.c10{background:#0f8b9d}
+.thumb{width:100%;height:150px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.pe{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}.pe .it{border:1px solid var(--line);border-radius:8px;padding:6px;background:var(--bg)}.pe img{width:100%;height:100px;object-fit:cover;border-radius:6px}.pe .b{display:flex;gap:4px;margin-top:4px}.pe .b button{padding:2px 8px;font-size:12px}
+@media(max-width:600px){.doc .ph-grid{grid-template-columns:repeat(2,1fr)}}`;
+
 /* ---- 書類の描画 ---- */
 const DOC_CSS=`.doc{background:#fff;color:#111;border:1px solid #ccc;border-radius:6px;padding:26px 30px;max-width:820px;margin:0 auto;font-size:13px;line-height:1.7}
 .doc h1{font-size:20px;text-align:center;margin:0 0 4px;letter-spacing:.15em}.doc .sub{text-align:center;color:#555;margin-bottom:14px;font-size:12px}
@@ -432,7 +492,7 @@ const DOC_CSS=`.doc{background:#fff;color:#111;border:1px solid #ccc;border-radi
 .doc .box{border:2px solid #1f4e8c;padding:8px 12px;margin:8px 0;display:flex;gap:18px;flex-wrap:wrap;align-items:center}.doc .big{font-size:26px;font-weight:700}
 .doc .item{border:1px solid #bbb;border-radius:4px;padding:6px 10px;margin:6px 0;page-break-inside:avoid}.doc .item .act{color:#333;margin-top:2px}
 .doc .foot{margin-top:16px;font-size:11px;color:#555;border-top:1px solid #aaa;padding-top:6px}.doc ul{margin:4px 0;padding-left:20px}`;
-const st=document.createElement('style');st.textContent=DOC_CSS+`
+const st=document.createElement('style');st.textContent=DOC_CSS+MAP_CSS+`
 .doc.gaiyo{background:linear-gradient(180deg,#f4f9ff 0,#fff 140px);border-top:8px solid #1f6feb}
 .doc.gaiyo h1{color:#0b3d91;font-size:24px}
 .doc.gaiyo h2{color:#fff;border-left:0;border-radius:4px;padding:4px 12px}
@@ -463,6 +523,7 @@ function docGaiyo(p){
  const cur=[...r.kou].filter(e=>OWN.test(e.purpose)&&!OWN_X.test(e.purpose)&&!e.cleared).sort((a,b)=>(+a.no||0)-(+b.no||0)).pop();
  const mort=r.otsu.filter(e=>!e.cleared&&MORT.test(e.purpose));const msum=mort.reduce((a,e)=>a+(num(e.amount)||0),0);
  return `<h1>物 件 概 要 書</h1><div class="sub">作成日 ${WA(todayStr())}　／　物件:${esc(p.name)}</div><div class="kpis"><div class="kpi k1"><span>売買価格</span><b>${man(p.price)}</b></div><div class="kpi k2"><span>${p.purpose==='投資'&&p.rent>0?'表面利回り':'㎡単価'}</span><b>${p.purpose==='投資'&&p.rent>0?pct(gross(p)):(isFinite(sqm(p))?man(sqm(p))+'/㎡':'-')}</b></div><div class="kpi k3"><span>${isL?'面積':'築年数・駅徒歩'}</span><b>${isL?esc(p.area)+'㎡':'築'+esc(p.age)+'年・徒歩'+esc(p.walk)+'分'}</b></div><div class="kpi k4 kv-${V2.cls}"><span>登記の判定</span><b>${V2.cls==='良好'?'良好':V2.cls==='注意'?'注意あり':'要精査'}</b></div></div>
+ <h2 class="c9">物件写真</h2>${photosHTML(p)}<h2 class="c10">所在地・周辺地図</h2><div style="margin-bottom:3px;font-size:12px">${esc(r.land.place||p.address)}${p.station?' / 最寄駅:'+esc(p.station)+'駅 徒歩'+esc(p.walk)+'分':''}</div>${mapHTML(p)}
  <h2 class="c1">１．物件の表示</h2>${T([['物件名称',esc(p.name),'物件種別',esc(p.type)],['所在地',esc(r.land.place||p.address),'利用目的',esc(p.purpose)],['最寄駅',nz(p.station)?esc(p.station)+'駅 徒歩'+esc(p.walk)+'分':'','現況',nz(d.occupancy)],['売主',nz(d.seller),'取引態様',nz(d.dealType)],['引渡時期',nz(d.delivery),'進捗',esc(p.status)]])}
  <h2 class="c2">２．土地に関する事項</h2>${T([['地番',nz(r.land.lot),'地目',nz(r.land.category)],['地積(登記)',nz(r.land.area,'㎡'),'敷地面積(概要)',nz(d.siteArea,'㎡')],['土地の権利',nz(d.rightType),'区域区分',nz(d.district)],['用途地域',nz(d.zoning),'防火指定',nz(d.fire)],['建ぺい率',nz(d.coverage,'%'),'容積率',nz(d.far,'%')],['接道状況',(d.roadDir?esc(d.roadDir)+'側 ':'')+nz(d.roadKind)+(d.roadWidth?' 幅員'+esc(d.roadWidth)+'m':'')+(d.frontage?' 接道'+esc(d.frontage)+'m':''),'坪単価',isFinite(tsubo(p))?man(tsubo(p)):'']])}
  ${isL?'':`<h2 class="c3">３．建物に関する事項</h2>${T([['家屋番号',nz(r.bldg.no),'種類',nz(r.bldg.kind)],['構造',nz(r.bldg.struct),'階数・所在階',nz(d.stories)],['床面積(登記)',nz(r.bldg.floorArea,'㎡'),'間取り・戸数',esc(p.layout)],['新築年月日',r.bldg.built?WA(r.bldg.built)+'(築'+Math.floor(yearsBetween(r.bldg.built,todayStr()))+'年)':'築'+esc(p.age)+'年','耐震基準',r.bldg.built?(r.bldg.built<'1981-06-01'?'旧耐震(1981年5月以前)':'新耐震'):''],['設備・仕様',nz(d.equip)],['法定耐用年数',L?L.L+'年(経過'+L.el+'年/残存 簡便法 約'+L.rem+'年)':'','融資期間の目安',L?(L.loan>0?'残り法定耐用年数 約'+L.loan+'年':'法定耐用年数を超過(金融機関ごとに個別判断)'):''],['管理',nz(d.mgmtForm)+(d.manager?'('+esc(d.manager)+')':''),'駐車場',nz(d.parking)]])}`}
@@ -523,6 +584,10 @@ function docTab(){
  ${sec('hyo','登記:表題部・取得日',`<div class="form">${tx('reg.acquired','登記情報の取得日','date')}<span></span>${tx('reg.land.place','土地の所在')}${tx('reg.land.lot','地番')}${sel('reg.land.category','地目',['宅地','田','畑','山林','原野','雑種地','公衆用道路','その他'])}${tx('reg.land.area','地積(㎡)','number','step="0.01"')}
  ${tx('reg.bldg.place','建物の所在')}${tx('reg.bldg.no','家屋番号')}${tx('reg.bldg.kind','種類(居宅・共同住宅など)')}${sel('reg.bldg.struct','構造',Object.keys(LIFE).concat('その他'))}${tx('reg.bldg.floorArea','床面積(㎡)','number','step="0.01"')}${tx('reg.bldg.built','新築年月日','date')}
  ${tx('reg.joint','共同担保(他の不動産との同時担保の内容)')}</div>`)}
+ ${sec('map','地図・写真',`<div class="form">${tx('geo.lat','緯度','number','step="0.000001"')}${tx('geo.lng','経度','number','step="0.000001"')}${sel('geo.zoom','地図の縮尺(ズーム)',['14','15','16','17','18'])}${sel('geo.layer','地図の種類',Object.keys(LAYERS))}
+ <div class="w row" style="align-items:center"><button class="btn fit" id="gs">所在地から位置を検索</button><span class="note">国土地理院の住所検索を使います(ネット接続が必要)。緯度経度の直接入力もできます。地図の種類: std=標準 / pale=淡色 / seamlessphoto=航空写真</span></div>
+ <div class="w"><label>写真を追加(最大12枚・自動で縮小して保存。1枚目がメイン写真)<input type="file" id="pf" accept="image/*" multiple></label></div></div>
+ <div class="pe">${p.photos.map((x,i)=>`<div class="it">${safeImg(x.src)?`<img src="${esc(x.src)}" alt="">`:''}<input data-pcap="${i}" value="${esc(x.cap)}" placeholder="キャプション" style="margin-top:4px"><div class="b"><button class="btn" data-pmain="${i}" ${i===0?'disabled':''}>${i===0?'メイン':'メインにする'}</button><button class="btn dng" data-pdel="${i}">削除</button></div></div>`).join('')||'<p class="note">写真は未登録です</p>'}</div>`)}
  ${sec('kou','登記:甲区(所有権に関する事項)',tbl('kou',KOU_COLS))}
  ${sec('otsu','登記:乙区(抵当権など)',tbl('otsu',OTSU_COLS))}
  <div id="doc" class="doc gaiyo"></div>`);
@@ -531,12 +596,17 @@ function docTab(){
  v.addEventListener('toggle',e=>{if(e.target.dataset?.sec)openSec[e.target.dataset.sec]=e.target.open},true);
  const h=e=>{const t=e.target,q=byId(docId);if(!q)return;
   if(t.id==='dp'){docId=t.value;docTab();return}
-  if(t.dataset.path){setP(ensure(q),t.dataset.path,t.value);save();pv()}
+  if(t.id==='pf'){addPhotos(q,[...t.files]).then(()=>{openSec.map=true;docTab()});return}
+  if(t.dataset.pcap!==undefined){q.photos[+t.dataset.pcap].cap=t.value;save();pv()}
+  else if(t.dataset.path){setP(ensure(q),t.dataset.path,t.value);save();pv()}
   else if(t.dataset.list){const row=q.reg[t.dataset.list][+t.dataset.i];if(row){row[t.dataset.f]=t.type==='checkbox'?t.checked:t.value;save();pv()}}};
  v.oninput=h;v.onchange=h;
  v.onclick=e=>{const q=byId(docId),b=e.target.closest('button');if(!b)return;
   if(b.dataset.kind){docKind=b.dataset.kind;docTab()}
   else if(b.dataset.add){const l=b.dataset.add,arr=q.reg[l];arr.push({no:String(arr.length+1),purpose:'',date:'',cause:'',holder:'',cleared:false,...(l==='otsu'?{amount:'',interest:'',debtor:''}:{})});save();openSec[l]=true;docTab()}
+  else if(b.id==='gs'){geocode(q).then(ok=>{if(ok){openSec.map=true;docTab()}})}
+  else if(b.dataset.pdel){q.photos.splice(+b.dataset.pdel,1);save();openSec.map=true;docTab()}
+  else if(b.dataset.pmain){const [x]=q.photos.splice(+b.dataset.pmain,1);q.photos.unshift(x);save();openSec.map=true;docTab()}
   else if(b.dataset.del){const [l,i]=b.dataset.del.split(':');q.reg[l].splice(+i,1);save();openSec[l]=true;docTab()}
   else if(b.id==='pr')window.print();
   else if(b.id==='dh'){const n=(docKind==='gaiyo'?'物件概要書_':'登記分析書_')+q.name;download(n+'.html',`<!doctype html><html lang="ja"><meta charset="utf-8"><title>${esc(n)}</title><style>body{margin:20px;font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}${DOC_CSS}${st.textContent}</style><body>${$('#doc').outerHTML}</body></html>`,'text/html')}};
@@ -564,7 +634,7 @@ function data(){
   else{const R=parseCSV(t);R.shift();let n=0;for(const r of R){const o={id:uid(),fav:false};COLS.forEach((c,i)=>{const v=r[i]??'';o[c]=['walk','price','rent','area','age','mgmt','tax'].includes(c)?(+v||0):v});
    if(!TYPES.includes(o.type))o.type=TYPES[0];if(!STATUSES.includes(o.status))o.status=STATUSES[0];if(!['居住','投資'].includes(o.purpose))o.purpose='居住';if(o.name){S.props.push(o);n++}}toast(n+'件を追加しました')}
   save();render()}catch(err){toast('読み込めませんでした')}};
- $('#rs').onclick=()=>{if(confirm('サンプルデータに戻します。現在のデータは失われます。')){localStorage.removeItem(KEY);load();attachSamples();save();render()}};
+ $('#rs').onclick=()=>{if(confirm('サンプルデータに戻します。現在のデータは失われます。')){localStorage.removeItem(KEY);load();attachSamples();attachGeo();save();render()}};
  $('#rm').onclick=()=>{if(confirm('全データを消去します。よろしいですか？')){S={props:[],cmp:[],sim:{}};save();render()}};
  $('#view').onclick=null;
 }
