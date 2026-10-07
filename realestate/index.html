@@ -94,10 +94,33 @@ const SAMPLE=[
 
 /* ---------- 状態 ---------- */
 let S;
-function load(){try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){S=null}
- if(!S||!Array.isArray(S.props))S={props:SAMPLE.map(p=>({...p})),cmp:[],sim:{}};}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S));return true}catch(e){try{toast('保存できませんでした(ブラウザの保存容量が上限です。写真を減らしてください)')}catch(_){}return false}}
-load();
+function cleanStr(v,n=500){return String(v??'').slice(0,n)}
+function sanitizeProp(p){
+ if(!p||typeof p!=='object'||Array.isArray(p))return null;
+ const o={id:/^[A-Za-z0-9_-]{1,40}$/.test(String(p.id))?String(p.id):uid()};
+ ['name','address','station','layout'].forEach(k=>o[k]=cleanStr(p[k],200));o.note=cleanStr(p.note,2000);
+ o.type=TYPES.includes(p.type)?p.type:TYPES[0];o.purpose=p.purpose==='投資'?'投資':'居住';o.status=STATUSES.includes(p.status)?p.status:STATUSES[0];
+ ['walk','price','rent','area','age','mgmt','tax'].forEach(k=>{const x=Number(p[k]);o[k]=isFinite(x)&&x>=0?x:0});o.fav=!!p.fav;
+ const dt=v=>/^\d{4}-\d{2}-\d{2}$/.test(String(v))?String(v):'';
+ if(p.det&&typeof p.det==='object')o.det=Object.fromEntries(Object.keys(DET_DEF).map(k=>[k,cleanStr(p.det[k],2000)]));
+ if(p.reg&&typeof p.reg==='object'){const r=p.reg,rows=(l,keys)=>(Array.isArray(l)?l:[]).filter(e=>e&&typeof e==='object').slice(0,200).map(e=>{const x={};keys.forEach(k=>x[k]=k==='date'?dt(e[k]):cleanStr(e[k],300));x.scope=['土地','建物'].includes(e.scope)?e.scope:'';x.cleared=!!e.cleared;return x});
+  const st=cleanStr(r.bldg?.struct,60);
+  o.reg={acquired:dt(r.acquired),joint:cleanStr(r.joint,500),land:Object.fromEntries(['place','lot','category','area'].map(k=>[k,cleanStr(r.land?.[k],200)])),
+   bldg:{...Object.fromEntries(['place','no','kind','floorArea'].map(k=>[k,cleanStr(r.bldg?.[k],200)])),struct:STRUCT_LEGACY[st]||st,built:dt(r.bldg?.built)},
+   kou:rows(r.kou,['no','purpose','date','cause','holder']),otsu:rows(r.otsu,['no','purpose','date','cause','holder','amount','interest','debtor'])}}
+ if(p.geo&&typeof p.geo==='object'){const la=parseFloat(p.geo.lat),ln=parseFloat(p.geo.lng);o.geo={lat:isFinite(la)&&Math.abs(la)<=85?String(la):'',lng:isFinite(ln)&&Math.abs(ln)<=180?String(ln):'',zoom:['14','15','16','17','18'].includes(String(p.geo.zoom))?String(p.geo.zoom):'16',layer:LAYERS[p.geo.layer]?p.geo.layer:'std'}}
+ if(Array.isArray(p.photos))o.photos=p.photos.filter(x=>x&&safeImg(x.src)).slice(0,12).map(x=>({src:x.src,cap:cleanStr(x.cap,200)}));
+ return o}
+function stateFrom(j){const seen=new Set(),props=[];
+ (Array.isArray(j.props)?j.props:[]).forEach(x=>{const o=sanitizeProp(x);if(!o)return;while(seen.has(o.id))o.id=uid();seen.add(o.id);props.push(o)});
+ const sim=j.sim&&typeof j.sim==='object'?Object.fromEntries(Object.entries(j.sim).filter(([k,v])=>typeof v==='number'||k==='_for')):{};
+ return {props,cmp:(Array.isArray(j.cmp)?j.cmp:[]).filter(id=>seen.has(id)).slice(0,3),sim}}
+function load(){let j=null;try{j=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+ S=j&&Array.isArray(j.props)?stateFrom(j):{props:SAMPLE.map(p=>({...p})),cmp:[],sim:{}}}
+let _t=null;function saveSoon(){clearTimeout(_t);_t=setTimeout(()=>{_t=null;save()},300)}
+function flushSave(){if(_t){clearTimeout(_t);_t=null;save()}}
+addEventListener('pagehide',flushSave);addEventListener('beforeunload',flushSave);
 let tab='dash';
 let F={q:'',type:'',status:'',purpose:'',maxPrice:'',minYield:'',fav:false,sort:'new'};
 let simId='';
@@ -112,7 +135,7 @@ function pmt(P,rate,years){const n=years*12,r=rate/12;if(P<=0||n<=0)return 0;ret
 function balance(P,rate,years,months){const n=years*12,r=rate/12;if(r===0)return Math.max(0,P-P/n*months);const m=pmt(P,rate,years);return Math.max(0,P*Math.pow(1+r,months)-m*(Math.pow(1+r,months)-1)/r)}
 
 /* ---------- ユーティリティ ---------- */
-const uid=()=>'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+function uid(){return 'p'+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
 const byId=id=>S.props.find(p=>p.id===id);
 function toast(m){const d=document.createElement('div');d.textContent=m;d.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:99px;z-index:99';document.body.append(d);setTimeout(()=>d.remove(),1800)}
 function download(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
@@ -121,7 +144,7 @@ function download(name,text,type){const a=document.createElement('a');a.href=URL
 const TABS=[['dash','ダッシュボード'],['list','物件検索'],['pipe','進捗管理'],['cmp','比較'],['sim','収支シミュレーター'],['doc','概要書・登記分析'],['data','データ']];
 function renderNav(){$('#nav').innerHTML=TABS.map(([k,l])=>`<button data-t="${k}" class="${k===tab?'on':''}">${l}${k==='cmp'&&S.cmp.length?` (${S.cmp.length})`:''}</button>`).join('')}
 $('#nav').onclick=e=>{const b=e.target.closest('button');if(b){tab=b.dataset.t;render()}};
-function render(){$('#view').onclick=null;$('#view').oninput=null;$('#view').onchange=null;renderNav();({dash,list,pipe,cmp,sim,doc:docTab,data})[tab]();window.scrollTo(0,0)}
+function render(){flushSave();$('#view').onclick=null;$('#view').oninput=null;$('#view').onchange=null;renderNav();({dash,list,pipe,cmp,sim,doc:docTab,data})[tab]();window.scrollTo(0,0)}
 const V=h=>{$('#view').innerHTML=h};
 
 /* ---------- ダッシュボード ---------- */
@@ -267,24 +290,24 @@ function sim(){
  ${f('hold','保有期間','年','1')}${f('growth','年間の価格変動','%','0.5')}${f('tax2','売却時の税率(譲渡益)','%','1')}
  </div></div><div id="out"></div>`);
  $('#sp').onchange=e=>{simId=e.target.value;S.sim={...D,_for:null};save();sim()};
- $('#view').oninput=e=>{const k=e.target.dataset?.k;if(!k)return;D[k]=+e.target.value||0;S.sim=D;save();calc(D)};
+ $('#view').oninput=e=>{const k=e.target.dataset?.k;if(!k)return;D[k]=+e.target.value||0;S.sim=D;saveSoon();calc(D)};
  $('#view').onclick=null;calc(D);
 }
 function calc(D){
- const price=D.price,cost=price*D.cost/100,loan=Math.max(0,price*(1-D.down/100));
- const equity=price*D.down/100+cost;
+ const price=Math.max(0,D.price),cost=price*Math.max(0,D.cost)/100,down=Math.min(100,Math.max(0,D.down)),yL=Math.max(1,Math.round(D.years)),rt=Math.max(0,D.rate)/100,loan=price*(1-down/100);
+ const equity=price*down/100+cost;
  const gi=D.rent*12*(1-D.vac/100);
  const opex=D.mgmt*12+D.tax+D.other;
- const noi=gi-opex,mp=pmt(loan,D.rate/100,D.years),ds=mp*12,cf=noi-ds;
+ const noi=gi-opex,mp=pmt(loan,rt,yL),ds=mp*12,cf=noi-ds;
  const cap=price>0?noi/(price+cost):NaN,grossY=price>0?D.rent*12/price:NaN;
  const coc=equity>0?cf/equity:NaN;
  const dscr=ds>0?noi/ds:NaN;
  const be=D.rent>0?(opex+ds)/(D.rent*12):NaN;
  // 年次
  const yrs=Math.max(1,Math.min(50,Math.round(D.hold)));let cum=-equity,pts=[{y:0,v:cum}];
- for(let y=1;y<=yrs;y++){cum+=y*12<=D.years*12?cf:noi;pts.push({y,v:cum})}
- const sale=price*Math.pow(1+D.growth/100,yrs),bal=balance(loan,D.rate/100,D.years,yrs*12);
- const gain=Math.max(0,sale-price),tx=gain*D.tax2/100;
+ for(let y=1;y<=yrs;y++){cum+=y<=yL?cf:noi;pts.push({y,v:cum})}
+ const sale=price*Math.pow(1+D.growth/100,yrs),bal=balance(loan,rt,yL,yrs*12);
+ const gain=Math.max(0,sale-sale*0.03-(price+cost)),tx=gain*D.tax2/100;
  const sell=sale-bal-tx-sale*0.03;
  const total=cum+sell, roi=equity>0?(total)/equity:NaN;
  const k=(l,v,c='')=>`<div class="card stat" style="margin:0"><div class="v ${c}">${v}</div><div class="l">${l}</div></div>`;
@@ -297,7 +320,7 @@ function calc(D){
  <tr><td>管理費・修繕積立金</td><td>-${yen(D.mgmt*12)}</td></tr><tr><td>固定資産税等</td><td>-${yen(D.tax)}</td></tr><tr><td>その他経費</td><td>-${yen(D.other)}</td></tr>
  <tr><td><b>NOI(営業純収益)</b></td><td><b>${yen(noi)}</b></td></tr><tr><td>ローン返済(年)</td><td>-${yen(ds)}</td></tr>
  <tr><td><b>税引前キャッシュフロー</b></td><td class="${cf>=0?'good':'bad'}"><b>${yen(cf)}</b></td></tr></table>
- <p class="note">所得税・減価償却・大規模修繕費は含まない概算です。</p></div>
+ <p class="note">所得税・減価償却・大規模修繕費は含まない概算です。譲渡税は(売却価格−売却費用3%−購入価格−諸費用)への一律税率で、減価償却は考慮しません。</p></div>
  <div class="card"><h2>${yrs}年保有の累積キャッシュ</h2>${chart(pts)}
  <table><tr><td>売却想定価格</td><td>${yen(sale)}</td></tr><tr><td>ローン残債</td><td>-${yen(bal)}</td></tr><tr><td>譲渡税・売却費用(3%)</td><td>-${yen(tx+sale*0.03)}</td></tr>
  <tr><td><b>最終手残り(CF累計＋売却)</b></td><td class="${total>=0?'good':'bad'}"><b>${yen(total)}</b></td></tr><tr><td>自己資金に対する倍率</td><td>${isFinite(roi)?(1+roi).toFixed(2)+'倍':'-'}</td></tr></table></div></div>`;
@@ -320,7 +343,7 @@ const SAMPLE_X={
    kou:[{no:'1',purpose:'所有権保存',date:'2020-05-20',cause:'',holder:'株式会社サンプル開発'},{no:'2',purpose:'所有権移転',date:'2022-09-02',cause:'令和4年8月25日売買',holder:'山田 太郎'}],
    otsu:[{no:'1',purpose:'抵当権設定',date:'2022-09-02',cause:'令和4年9月2日金銭消費貸借同日設定',amount:'48000000',interest:'年1.2%',debtor:'山田 太郎',holder:'(サンプル)銀行'}],joint:''}},
  s2:{det:{seller:'佐藤 一郎',dealType:'売主',occupancy:'賃貸中(オーナーチェンジ)',delivery:'相談',rightType:'所有権',district:'市街化区域',zoning:'第一種低層住居専用地域',coverage:'50',far:'100',fire:'指定なし',roadDir:'東',roadKind:'42条2項道路',roadWidth:'3.6',frontage:'12.0',siteArea:'310',footprint:'205',totalFloor:'340',stories:'2階建 8戸',equip:'エアコン・独立洗濯機置場・インターネット無料',mgmtForm:'全部委託',manager:'(サンプル)プロパティ',parking:'敷地内6台',school:'',special:'屋根・外壁の修繕履歴の開示を依頼中。'},
-  reg:{acquired:'2026-08-01',land:{place:'大阪府大阪市東淀川区○○三丁目',lot:'45番6',category:'宅地',area:'310.00'},bldg:{place:'大阪府大阪市東淀川区○○三丁目45番地6',no:'45番地6',kind:'共同住宅',struct:'軽量鉄骨造',floorArea:'260.0',built:'2008-04-10'},
+  reg:{acquired:'2026-08-01',land:{place:'大阪府大阪市東淀川区○○三丁目',lot:'45番6',category:'宅地',area:'310.00'},bldg:{place:'大阪府大阪市東淀川区○○三丁目45番地6',no:'45番地6',kind:'共同住宅',struct:'軽量鉄骨造(厚3mm超4mm以下)',floorArea:'260.0',built:'2008-04-10'},
    kou:[{no:'1',purpose:'所有権移転',date:'2015-03-12',cause:'平成27年3月5日売買',holder:'佐藤 一郎'},{no:'2',purpose:'差押',date:'2024-11-05',cause:'令和6年11月1日差押',holder:'大阪市'},{no:'3',purpose:'所有権移転',date:'2025-12-01',cause:'令和7年11月28日贈与',holder:'佐藤 花子'}],
    otsu:[{no:'1',purpose:'根抵当権設定',date:'2016-04-01',cause:'平成28年4月1日設定',amount:'100000000',interest:'年2.5%',debtor:'佐藤 一郎',holder:'(サンプル)信用金庫'}],joint:'大阪市東淀川区○○三丁目45番7の土地・建物と共同担保'}},
  s7:{det:{seller:'田中 次郎',dealType:'売主',occupancy:'空家',delivery:'契約後1か月',rightType:'所有権',district:'市街化区域',zoning:'近隣商業地域',coverage:'80',far:'300',fire:'準防火地域',roadDir:'北',roadKind:'42条2項道路',roadWidth:'2.7',frontage:'4.5',siteArea:'85',footprint:'70',totalFloor:'120',stories:'木造2階建',equip:'要全面改修',mgmtForm:'なし',parking:'なし',special:'共有者の三郎氏の同意書あり(写し)。'},
@@ -333,24 +356,39 @@ function ensure(p){
  r.bldg=Object.assign({place:'',no:'',kind:'',struct:'',floorArea:'',built:''},r.bldg);
  r.kou=r.kou||[];r.otsu=r.otsu||[];r.acquired=r.acquired||'';r.joint=r.joint||'';p.geo=Object.assign({lat:'',lng:'',zoom:'16',layer:'std'},p.geo);p.photos=Array.isArray(p.photos)?p.photos:[];return p}
 function attachSamples(){S.props.forEach(p=>{if(SAMPLE_X[p.id]&&!p.reg&&!p.det)Object.assign(p,JSON.parse(JSON.stringify(SAMPLE_X[p.id])))})}
-attachSamples();
 
 const WA=d=>{if(!d)return '';if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return esc(d);const [y,m,dd]=d.split('-').map(Number);
  let e,b;if(d>='2019-05-01'){e='令和';b=2019}else if(d>='1989-01-08'){e='平成';b=1989}else if(d>='1926-12-25'){e='昭和';b=1926}else return `${y}年${m}月${dd}日`;
  const n=y-b+1;return `${e}${n===1?'元':n}年${m}月${dd}日`};
 const num=v=>{const x=parseFloat(String(v).replace(/,/g,''));return isFinite(x)?x:NaN};
 const yearsBetween=(a,b)=>(new Date(b)-new Date(a))/(365.25*864e5);
-const todayStr=()=>new Date().toISOString().slice(0,10);
-const LIFE={'木造':22,'軽量鉄骨造':27,'鉄骨造':34,'鉄筋コンクリート造':47,'鉄骨鉄筋コンクリート造':47};
+const todayStr=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0')};
+const STRUCTS=['木造','木造モルタル','軽量鉄骨造(厚3mm以下)','軽量鉄骨造(厚3mm超4mm以下)','鉄骨造(厚4mm超)','鉄筋コンクリート造','鉄骨鉄筋コンクリート造'];
+const LIFE={'木造':22,'木造モルタル':20,'軽量鉄骨造(厚3mm以下)':19,'軽量鉄骨造(厚3mm超4mm以下)':27,'鉄骨造(厚4mm超)':34,'鉄筋コンクリート造':47,'鉄骨鉄筋コンクリート造':47,'軽量鉄骨造':27,'鉄骨造':34};
+const STRUCT_LEGACY={'軽量鉄骨造':'軽量鉄骨造(厚3mm超4mm以下)','鉄骨造':'鉄骨造(厚4mm超)'};
 function lifeInfo(p){const r=p.reg.bldg,L=LIFE[r.struct];if(!L||p.type==='土地')return null;
- const el=r.built?yearsBetween(r.built,todayStr()):p.age;
+ const el=Math.floor(r.built?yearsBetween(r.built,todayStr()):p.age);
  const rem=el>=L?Math.max(2,Math.floor(L*0.2)):Math.floor(L-el+el*0.2);
- return {L,el:Math.floor(el),rem,loan:Math.max(0,Math.floor(L-el))}}
+ return {L,el,rem,loan:Math.max(0,Math.floor(L-el))}}
 
 const OWN=/(所有権|持分).*(保存|移転)/,OWN_X=/仮登記|抹消|更正|変更/;
 const BAD=/差押|仮差押|仮処分|仮登記|買戻|信託|破産|競売|滞納処分|予告登記/;
 const OTHER=/賃借権|地上権|地役権|使用貸借|永小作|採石権/;
 const MORT=/抵当権|根抵当権|質権|先取特権/;
+const nmz=s=>String(s||'').replace(/[\s　]/g,'');
+const latestOf=l=>l.reduce((a,e)=>!a?e:((e.date&&a.date&&e.date!==a.date)?(e.date>a.date?e:a):((+e.no||0)>=(+a.no||0)?e:a)),null);
+const nameMatch=(h,s)=>{h=nmz(h);s=nmz(s);return !!h&&!!s&&(h.includes(s)||s.includes(h))};
+function ownership(p){const r=p.reg,isL=p.type==='土地';
+ const split=r.kou.some(e=>e.scope)||r.otsu.some(e=>e.scope);
+ const own=r.kou.filter(e=>OWN.test(e.purpose)&&!OWN_X.test(e.purpose)&&!e.cleared);
+ const scopes=split?(isL?['土地']:['土地','建物']):[''];
+ const cur={};scopes.forEach(s=>{cur[s]=latestOf(own.filter(e=>!s||!e.scope||e.scope===s))});
+ return {own,split,scopes,cur,any:latestOf(own)}}
+function activeMort(p){const m=new Map();
+ p.reg.otsu.filter(e=>!e.cleared&&MORT.test(e.purpose)).forEach(e=>{const k=[e.purpose,nmz(e.holder),e.amount,e.date].join('|');if(!m.has(k))m.set(k,{...e,scopes:[]});if(e.scope)m.get(k).scopes.push(e.scope)});
+ const list=[...m.values()];return {list,sum:list.reduce((a,e)=>a+(num(e.amount)||0),0)}}
+function farLimit(d){const far=num(d.far),rw=num(d.roadWidth);if(!(far>0))return NaN;if(!(rw>0)||rw>=12)return far;
+ const k=/住居|低層|中高層/.test(d.zoning)?0.4:0.6;return Math.min(far,rw*k*100)}
 function analyze(p){
  ensure(p);const r=p.reg,d=p.det,items=[];
  const add=(level,title,detail,action='')=>items.push({level,title,detail,action});
@@ -359,40 +397,37 @@ function analyze(p){
  if(empty){add('確認','登記情報が未入力です','表題部・甲区・乙区を入力すると自動で分析します。','登記事項証明書(全部事項)を取得して入力');return items}
  if(!r.acquired)add('確認','登記情報の取得日が未入力','情報の鮮度を判断できません。','取得日を入力');
  else{const m=yearsBetween(r.acquired,td)*12;if(m>3)add('確認',`登記情報が古い(取得から約${Math.floor(m)}か月)`,'その後に差押・抵当権設定などが入っている可能性があります。','決済直前に最新の登記事項証明書を再取得して差異を確認')}
- // ---- 甲区
- const kou=[...r.kou].sort((a,b)=>(+a.no||0)-(+b.no||0)),act=e=>!e.cleared;
- const own=kou.filter(e=>OWN.test(e.purpose)&&!OWN_X.test(e.purpose)&&act(e));
- const cur=own[own.length-1];
- if(!cur&&r.kou.length)add('重大','現在の所有者を特定できません','所有権の保存・移転が甲区に見当たりません。','入力内容を確認し、登記簿原本で所有者を確認');
- if(cur){
-  const nm=s=>String(s||'').replace(/[\s　]/g,''),h=nm(cur.holder),s=nm(d.seller);
-  if(!s)add('確認','売主が未入力','登記名義人と売主の一致を確認できません。','「概要書の詳細」で売主を入力');
-  else if(h.includes(s)||s.includes(h)){if(/持分|共有/.test(cur.purpose+cur.holder))add('注意','共有名義です',`名義:${cur.holder}。共有者全員の売却意思が必要です。`,'共有者全員の署名押印(印鑑証明)・本人確認、持分割合の確認')}
-  else add('重大','売主と登記名義人が一致しません',`登記名義人:${cur.holder||'(空欄)'} / 売主:${d.seller}`,'売主の権限(相続・委任・名義変更の有無)を確認。名義が一致するまで契約・決済に進まない');
-  const own2=own.filter(e=>e.date);
-  const last=own2[own2.length-1];
-  if(last){const y=yearsBetween(last.date,td);
-   if(y<2)add('注意',`直近の所有権移転から約${y.toFixed(1)}年`,'短期保有です。買取再販・差押回避目的の移転・契約不適合責任の免責範囲などを確認。','売主の取得経緯と取得価格、リフォーム内容、保証の範囲を確認');
-   else if(y<5)add('確認',`直近の所有権移転から約${y.toFixed(1)}年`,'売主側の譲渡所得は短期譲渡(5年以内)に当たる可能性があります。売主の売却動機に影響する場合があります。','売却理由を確認')}
-  const ten=own2.filter(e=>yearsBetween(e.date,td)<=10).length;
-  if(ten>=4)add('注意',`10年以内に所有権が${ten}回移転しています`,'頻繁な転売は、物件の欠陥や権利関係の問題を示唆する場合があります。','過去の取引経緯と物件の瑕疵情報を確認');
-  if(/相続/.test(cur.cause))add('確認','現所有者の取得原因が相続',`原因:${cur.cause}`,'相続人全員の同意(遺産分割協議書)・相続登記の完了を確認');
-  if(/競売|公売/.test(cur.cause))add('注意','現所有者の取得原因が競売・公売','占有状況や残置物・近隣トラブルの有無を確認してください。','現地確認と占有者の有無の確認');
- }
- kou.forEach(e=>{
-  if(BAD.test(e.purpose)&&act(e))add('重大',`甲区${e.no}番「${e.purpose}」が残っています`,`権利者:${e.holder||'-'} / 受付:${WA(e.date)}`,'登記が抹消(解除)されるまで取引を進めない。決済と同時の抹消条件を契約に明記し、司法書士に確認');
-  if(/贈与/.test(e.cause)&&e.date){const hit=kou.find(k=>/差押|仮差押|滞納処分|競売/.test(k.purpose)&&k.date&&k.date<e.date);
+ // ---- 甲区:所有者・売主の照合(土地/建物の別に判定)
+ const ow=ownership(p),cur=ow.any;
+ if(r.kou.length&&!ow.own.length)add('重大','現在の所有者を特定できません','所有権の保存・移転が甲区に見当たりません。','入力内容を確認し、登記簿原本で所有者を確認');
+ ow.scopes.forEach(s=>{const c=ow.cur[s],tag=ow.split?`(${s}) `:'';if(!c)return;
+  if(!nmz(d.seller)){if(s===ow.scopes[0])add('確認','売主が未入力','登記名義人と売主の一致を確認できません。','「概要書の詳細」で売主を入力');return}
+  if(nameMatch(c.holder,d.seller)){if(/持分|共有/.test(c.purpose+c.holder))add('注意',`${tag}共有名義です`,`名義:${c.holder}。共有者全員の売却意思が必要です。`,'共有者全員の署名押印(印鑑証明)・本人確認、持分割合の確認')}
+  else add('重大',`${tag}売主と登記名義人が一致しません`,`登記名義人:${c.holder||'(空欄)'} / 売主:${d.seller}`,'売主の権限(相続・委任・名義変更の有無)を確認。名義が一致するまで契約・決済に進まない')});
+ if(ow.split&&ow.cur['土地']&&ow.cur['建物']&&nmz(ow.cur['土地'].holder)!==nmz(ow.cur['建物'].holder))
+  add('注意','土地と建物の登記名義人が異なります',`土地:${ow.cur['土地'].holder||'-'} / 建物:${ow.cur['建物'].holder||'-'}`,'借地権・地上権の有無、売主が土地建物の両方を処分できるかを確認');
+ const own2=ow.own.filter(e=>e.date).sort((a,b)=>a.date.localeCompare(b.date)),last=own2[own2.length-1];
+ if(last){const y=yearsBetween(last.date,td);
+  if(y<2)add('注意',`直近の所有権移転から約${y.toFixed(1)}年`,'短期保有です。買取再販・差押回避目的の移転・契約不適合責任の免責範囲などを確認。','売主の取得経緯と取得価格、リフォーム内容、保証の範囲を確認');
+  else if(y<5)add('確認',`直近の所有権移転から約${y.toFixed(1)}年`,'売主側の譲渡所得は短期譲渡(5年以内)に当たる可能性があります。売却動機に影響する場合があります。','売却理由を確認')}
+ const ten=own2.filter(e=>yearsBetween(e.date,td)<=10).length;
+ if(ten>=4)add('注意',`10年以内に所有権が${ten}回移転しています`,'頻繁な転売は、物件の欠陥や権利関係の問題を示唆する場合があります。','過去の取引経緯と物件の瑕疵情報を確認');
+ if(cur){if(/相続/.test(cur.cause))add('確認','現所有者の取得原因が相続',`原因:${cur.cause}`,'相続人全員の同意(遺産分割協議書)・相続登記の完了を確認');
+  if(/競売|公売/.test(cur.cause))add('注意','現所有者の取得原因が競売・公売','占有状況や残置物・近隣トラブルの有無を確認してください。','現地確認と占有者の有無の確認')}
+ r.kou.forEach(e=>{const tag=e.scope?`[${e.scope}]`:'';
+  if(BAD.test(e.purpose)&&!e.cleared)add('重大',`甲区${e.no}番${tag}「${e.purpose}」が残っています`,`権利者:${e.holder||'-'} / 受付:${WA(e.date)}`,'登記が抹消(解除)されるまで取引を進めない。決済と同時の抹消条件を契約に明記し、司法書士に確認');
+  if(/贈与/.test(e.cause)&&e.date){const hit=r.kou.find(k=>/差押|仮差押|滞納処分|競売/.test(k.purpose)&&k.date&&k.date<e.date&&(!k.scope||!e.scope||k.scope===e.scope));
    if(hit)add('重大',`差押の後に贈与による所有権移転(甲区${e.no}番)`,'差押を受けた後の贈与は、詐害行為として取り消されるおそれがあります。','弁護士に相談。当該取引は慎重に判断')}});
- const dated=kou.filter(e=>e.date);for(let i=1;i<dated.length;i++)if(dated[i].date<dated[i-1].date){add('確認','甲区の順位番号と受付日の順序が一致しません','入力ミスの可能性があります。','原本と照合して入力を修正');break}
- // ---- 乙区
- const ot=r.otsu.filter(act),mort=ot.filter(e=>MORT.test(e.purpose));
- const sum=mort.reduce((a,e)=>a+(num(e.amount)||0),0);
- mort.forEach(e=>{const ne=/根抵当/.test(e.purpose);
-  add('注意',`乙区${e.no}番「${e.purpose}」が残っています`,`${ne?'極度額':'債権額'}:${yen(num(e.amount))} / 債務者:${e.debtor||'-'} / 権利者:${e.holder||'-'} / 受付:${WA(e.date)}`,
+ for(const g of ['','土地','建物']){const l=r.kou.filter(e=>(e.scope||'')===g&&e.date).sort((a,b)=>(+a.no||0)-(+b.no||0));
+  if(l.some((e,i)=>i&&e.date<l[i-1].date)){add('確認',`甲区${g?`(${g})`:''}の順位番号と受付日の順序が一致しません`,'入力ミスの可能性があります。','原本と照合して入力を修正');break}}
+ // ---- 乙区(土地・建物に同じ担保権が付く場合は1件として数える)
+ const ot=r.otsu.filter(e=>!e.cleared),am=activeMort(p),sum=am.sum;
+ am.list.forEach(e=>{const ne=/根抵当/.test(e.purpose),sc=e.scopes.length?`[${[...new Set(e.scopes)].join('・')}]`:'';
+  add('注意',`乙区${e.no}番${sc}「${e.purpose}」が残っています`,`${ne?'極度額':'債権額'}:${yen(num(e.amount))} / 債務者:${e.debtor||'-'} / 権利者:${e.holder||'-'} / 受付:${WA(e.date)}`,
    ne?'根抵当権は元本確定前だと残債が不明です。極度額と残高証明を取得し、決済時の全額弁済と抹消の同意書類を銀行から事前に受領':'決済時に残債を全額弁済し、抹消書類を受領して同日に抹消登記(売主負担が一般的)')});
- if(sum>0&&p.price>0){if(sum>p.price)add('重大','担保権の合計額が売買価格を超えています',`担保権合計 ${yen(sum)} > 売買価格 ${yen(p.price)}(オーバーローンの可能性)`,'売却代金で完済できないおそれ。抹消できない場合は契約解除条件を設ける');
+ if(sum>0&&p.price>0){if(sum>p.price)add('重大','担保権の合計額が売買価格を超えています',`担保権合計 ${yen(sum)} > 売買価格 ${yen(p.price)}(オーバーローンの可能性。土地・建物の同一担保は1件として集計)`,'売却代金で完済できないおそれ。抹消できない場合は契約解除条件を設ける');
   else if(sum>=p.price*0.8)add('注意','担保権の合計額が売買価格の80%以上',`担保権合計 ${yen(sum)}(価格の${(sum/p.price*100).toFixed(0)}%)`,'売主の手取りが少なく、抹消に支障が出る可能性。金融機関の同意を事前確認')}
- ot.filter(e=>OTHER.test(e.purpose)).forEach(e=>add('注意',`乙区${e.no}番「${e.purpose}」`,`権利者:${e.holder||'-'}。買主が負担を引き継ぐ可能性があります。`,'契約内容(賃料・期間・承継の可否)を確認し、必要なら抹消を条件にする'));
+ ot.filter(e=>OTHER.test(e.purpose)).forEach(e=>add('注意',`乙区${e.no}番${e.scope?`[${e.scope}]`:''}「${e.purpose}」`,`権利者:${e.holder||'-'}。買主が負担を引き継ぐ可能性があります。`,'契約内容(賃料・期間・承継の可否)を確認し、必要なら抹消を条件にする'));
  if(r.joint.trim())add('確認','共同担保(他の不動産との同時担保)があります',r.joint,'担保の一部解除(抹消)が可能か、金融機関に事前確認');
  if(!ot.length&&r.kou.length)add('良好','乙区に担保権・賃借権等はありません','抵当権の抹消手続は不要です。','');
  // ---- 表題部
@@ -403,16 +438,16 @@ function analyze(p){
  const refArea=isL?num(r.land.area):num(r.bldg.floorArea);
  if(isFinite(refArea)&&refArea>0&&p.area>0&&Math.abs(refArea-p.area)/refArea>0.03)add('注意','登記面積と概要の面積が3%以上ずれています',`登記:${refArea}㎡ / 概要:${p.area}㎡`,'登記面積か実測面積かを確認(公簿売買・実測売買の別を契約で明記)');
  if(r.bldg.built&&!isL){const by=+r.bldg.built.slice(0,4);if(Math.abs((new Date().getFullYear()-by)-p.age)>=2)add('確認','登記上の新築年と概要の築年数が合いません',`登記:${WA(r.bldg.built)}新築 / 概要:築${p.age}年`,'築年数の根拠を確認');
-  if(r.bldg.built<'1981-06-01')add('注意','旧耐震基準(1981年5月以前)の建物です',`新築:${WA(r.bldg.built)}`,'耐震診断・耐震改修の履歴を確認。融資・住宅ローン減税・保険に影響する場合あり')}
- // ---- 法令・接道(概要書の入力から)
+  if(r.bldg.built<'1981-06-01')add('注意','旧耐震基準の可能性があります(新築日が1981年5月以前)',`新築:${WA(r.bldg.built)}。耐震基準は建築確認の日で決まるため、新築日による簡易判定です。`,'建築確認日(確認済証)を確認し、耐震診断・耐震改修の履歴を確認。融資・住宅ローン減税・保険に影響する場合あり')}
+ // ---- 法令・接道
  if(/調整/.test(d.district))add('重大','市街化調整区域です','原則として新築・建替えができず、開発許可の要否の確認が必要です。','役所で建築可否を確認し、許可を条件にする');
  if(d.rightType&&d.rightType!=='所有権')add('注意',`土地の権利が「${d.rightType}」です`,'地主の承諾、譲渡承諾料、地代、更新料、期間満了時の取扱いを確認する必要があります。','借地契約書を精査し、地主の承諾書を取得');
- const cov=num(d.coverage),far=num(d.far),site=num(d.siteArea),fp=num(d.footprint),tf=num(d.totalFloor);
- if(site>0&&fp>0&&cov>0){const x=fp/site*100;if(x>cov+0.5)add('注意','建ぺい率が制限を超えている可能性があります',`実際 約${x.toFixed(1)}% > 制限 ${cov}%`,'既存不適格か違反建築かを確認(確認済証・検査済証、建築確認台帳)')}
- if(site>0&&tf>0&&far>0){const x=tf/site*100;if(x>far+0.5)add('注意','容積率が制限を超えている可能性があります',`実際 約${x.toFixed(1)}% > 制限 ${far}%`,'既存不適格か違反建築かを確認。融資審査で評価が下がることがある')}
+ const cov=num(d.coverage),site=num(d.siteArea),fp=num(d.footprint),tf=num(d.totalFloor),lim=farLimit(d);
+ if(site>0&&fp>0&&cov>0){const x=fp/site*100;if(x>cov+0.5)add('注意','建ぺい率が指定を超えている可能性があります',`実際 約${x.toFixed(1)}% > 指定 ${cov}%(角地・防火地域内の耐火建築物などの緩和で上限が高い場合があります)`,'既存不適格か違反建築かを確認(確認済証・検査済証、建築確認台帳)')}
+ if(site>0&&tf>0&&lim>0){const x=tf/site*100;if(x>lim+0.5){const rw=num(d.roadWidth);add('注意','容積率が制限を超えている可能性があります',`実際 約${x.toFixed(1)}% > 制限 ${lim.toFixed(0)}%(指定${num(d.far)}%${lim<num(d.far)?`、前面道路幅員${rw}mによる制限を適用`:''})`,'既存不適格か違反建築かを確認。融資審査で評価が下がることがある')}}
  const rw=num(d.roadWidth),fr=num(d.frontage);
  if(isFinite(fr)&&fr<2)add('重大','接道が2m未満です(再建築不可の恐れ)',`接道 ${fr}m`,'建築基準法43条の接道義務を確認。建替えできない前提で価格を判断');
- if(isFinite(rw)&&rw<4&&!isM){const sb=isFinite(fr)?((4-rw)/2*fr):NaN;add('注意','前面道路が4m未満です(セットバックの可能性)',`幅員 ${rw}m${isFinite(sb)?` / 後退面積の目安 約${sb.toFixed(1)}㎡(道路中心から2m)`:''}`,'セットバック部分は建築・塀の設置に制限あり。敷地面積が減る前提で評価')}
+ if(isFinite(rw)&&rw<4&&!isM){const sb=isFinite(fr)?((4-rw)/2*fr):NaN;add('注意','前面道路が4m未満です(セットバックの可能性)',`幅員 ${rw}m${isFinite(sb)?` / 後退面積の目安 約${sb.toFixed(1)}㎡(道路の反対側が敷地でない場合は 4m−幅員 の後退が必要)`:''}`,'セットバック部分は建築・塀の設置に制限あり。敷地面積が減る前提で評価')}
  const miss=[];if(!isM){if(!d.zoning)miss.push('用途地域');if(!d.coverage)miss.push('建ぺい率');if(!d.far)miss.push('容積率');if(!d.roadWidth)miss.push('前面道路幅員');if(!d.frontage)miss.push('接道長さ')}
  if(miss.length)add('確認','法令・接道の入力が不足しています','未入力: '+miss.join('、'),'役所の都市計画課・建築指導課で調査し、概要書の詳細に入力');
  return items}
@@ -425,7 +460,7 @@ function verdict(items){
 /* ---------- 地図・写真 ---------- */
 const GEO_DEF={lat:'',lng:'',zoom:'16',layer:'std'};
 const LAYERS={std:['標準地図','png'],pale:['淡色地図','png'],seamlessphoto:['航空写真','jpg']};
-const safeImg=s=>/^data:image\/(jpeg|png|webp|gif|svg\+xml)[;,]/.test(String(s||''))?s:'';
+function safeImg(s){return /^data:image\/(jpeg|png|webp|gif|svg\+xml)[;,]/.test(String(s||''))&&String(s).length<4e6?s:''}
 function svgPhoto(title,sub,c1,c2,kind){
  let b='';
  if(kind==='plan')b=`<rect x="120" y="90" width="560" height="330" fill="#fff" stroke="#334" stroke-width="6"/><line x1="400" y1="90" x2="400" y2="270" stroke="#334" stroke-width="4"/><line x1="120" y1="270" x2="680" y2="270" stroke="#334" stroke-width="4"/><line x1="470" y1="270" x2="470" y2="420" stroke="#334" stroke-width="4"/><text x="250" y="190" font-size="26" fill="#334">LDK</text><text x="520" y="190" font-size="26" fill="#334">洋室</text><text x="250" y="355" font-size="26" fill="#334">水廻り</text><text x="540" y="355" font-size="26" fill="#334">収納</text>`;
@@ -439,7 +474,6 @@ const SAMPLE_G={
  s7:{geo:{lat:'34.9965',lng:'135.7608',zoom:'17',layer:'std'},photos:[{src:svgPhoto('(サンプル)町家 外観','築50年 木造2階建','#e6d3ff','#f7f0ff','ext'),cap:'外観'}]}
 };
 function attachGeo(){S.props.forEach(p=>{const g=SAMPLE_G[p.id];if(g){if(!p.geo)p.geo={...g.geo};if(!p.photos)p.photos=g.photos.map(x=>({...x}))}})}
-attachGeo();
 function tileXY(lat,lng,z){const n=Math.pow(2,z),r=lat*Math.PI/180;return {x:(lng+180)/360*n,y:(1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*n}}
 function mapHTML(p){
  const g=p.geo||GEO_DEF,lat=parseFloat(g.lat),lng=parseFloat(g.lng),z=Math.min(18,Math.max(10,parseInt(g.zoom)||16));
@@ -509,7 +543,7 @@ const st=document.createElement('style');st.textContent=DOC_CSS+MAP_CSS+`
 .doc.gaiyo .foot{border-top:3px solid #1f6feb}
 .doc{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 @media(max-width:600px){.doc.gaiyo .kpis{grid-template-columns:repeat(2,1fr)}}
-@media print{header,.noprint,nav{display:none!important}body{background:#fff}main{padding:0;max-width:none}.doc{border:0;border-radius:0;padding:0;max-width:none}@page{size:A4;margin:14mm}}
+@media print{.doc h2{break-after:avoid}.doc tr,.doc .item,.doc .kpi{break-inside:avoid}header,.noprint,nav{display:none!important}body{background:#fff}main{padding:0;max-width:none}.doc{border:0;border-radius:0;padding:0;max-width:none}@page{size:A4;margin:14mm}}
 details.card summary{cursor:pointer;font-weight:600}details.card .form{margin-top:10px}.tbl-in input{min-width:90px;padding:4px 6px}.tbl-in td,.tbl-in th{padding:4px}.tbl-in input[type=checkbox]{min-width:0;width:auto}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}.seg button{border:0;background:var(--card);color:var(--ink);padding:7px 14px;font:inherit;cursor:pointer}.seg button.on{background:var(--accent);color:var(--accent-ink)}
 .vchip{display:inline-block;border-radius:99px;padding:1px 10px;font-size:12px;color:#fff}.v-重大{background:#c0392b}.v-注意{background:#d68910}.v-良好{background:#1e8449}`;
@@ -520,48 +554,56 @@ const nz=(v,u='')=>v!==''&&v!=null&&v!==undefined&&!(typeof v==='number'&&!isFin
 function docGaiyo(p){
  ensure(p);const d=p.det,r=p.reg,A=analyze(p),V2=verdict(A),isL=p.type==='土地',L=lifeInfo(p);
  const warn=A.filter(i=>i.level==='重大'||i.level==='注意');
- const cur=[...r.kou].filter(e=>OWN.test(e.purpose)&&!OWN_X.test(e.purpose)&&!e.cleared).sort((a,b)=>(+a.no||0)-(+b.no||0)).pop();
- const mort=r.otsu.filter(e=>!e.cleared&&MORT.test(e.purpose));const msum=mort.reduce((a,e)=>a+(num(e.amount)||0),0);
+ const ow=ownership(p),cur=ow.any,am=activeMort(p),mort=am.list,msum=am.sum;
+ const ownTxt=ow.split?ow.scopes.map(s=>ow.cur[s]?s+':'+esc(ow.cur[s].holder):s+':不明').join(' / '):(cur?esc(cur.holder)+'('+WA(cur.date)+' '+esc(cur.purpose)+')':'未入力');
+ const sellOk=!d.seller?'':(ow.scopes.every(s=>ow.cur[s]&&nameMatch(ow.cur[s].holder,d.seller))?'一致':'<b>不一致(要確認)</b>');
  return `<h1>物 件 概 要 書</h1><div class="sub">作成日 ${WA(todayStr())}　／　物件:${esc(p.name)}</div><div class="kpis"><div class="kpi k1"><span>売買価格</span><b>${man(p.price)}</b></div><div class="kpi k2"><span>${p.purpose==='投資'&&p.rent>0?'表面利回り':'㎡単価'}</span><b>${p.purpose==='投資'&&p.rent>0?pct(gross(p)):(isFinite(sqm(p))?man(sqm(p))+'/㎡':'-')}</b></div><div class="kpi k3"><span>${isL?'面積':'築年数・駅徒歩'}</span><b>${isL?esc(p.area)+'㎡':'築'+esc(p.age)+'年・徒歩'+esc(p.walk)+'分'}</b></div><div class="kpi k4 kv-${V2.cls}"><span>登記の判定</span><b>${V2.cls==='良好'?'良好':V2.cls==='注意'?'注意あり':'要精査'}</b></div></div>
  <h2 class="c9">物件写真</h2>${photosHTML(p)}<h2 class="c10">所在地・周辺地図</h2><div style="margin-bottom:3px;font-size:12px">${esc(r.land.place||p.address)}${p.station?' / 最寄駅:'+esc(p.station)+'駅 徒歩'+esc(p.walk)+'分':''}</div>${mapHTML(p)}
  <h2 class="c1">１．物件の表示</h2>${T([['物件名称',esc(p.name),'物件種別',esc(p.type)],['所在地',esc(r.land.place||p.address),'利用目的',esc(p.purpose)],['最寄駅',nz(p.station)?esc(p.station)+'駅 徒歩'+esc(p.walk)+'分':'','現況',nz(d.occupancy)],['売主',nz(d.seller),'取引態様',nz(d.dealType)],['引渡時期',nz(d.delivery),'進捗',esc(p.status)]])}
- <h2 class="c2">２．土地に関する事項</h2>${T([['地番',nz(r.land.lot),'地目',nz(r.land.category)],['地積(登記)',nz(r.land.area,'㎡'),'敷地面積(概要)',nz(d.siteArea,'㎡')],['土地の権利',nz(d.rightType),'区域区分',nz(d.district)],['用途地域',nz(d.zoning),'防火指定',nz(d.fire)],['建ぺい率',nz(d.coverage,'%'),'容積率',nz(d.far,'%')],['接道状況',(d.roadDir?esc(d.roadDir)+'側 ':'')+nz(d.roadKind)+(d.roadWidth?' 幅員'+esc(d.roadWidth)+'m':'')+(d.frontage?' 接道'+esc(d.frontage)+'m':''),'坪単価',isFinite(tsubo(p))?man(tsubo(p)):'']])}
- ${isL?'':`<h2 class="c3">３．建物に関する事項</h2>${T([['家屋番号',nz(r.bldg.no),'種類',nz(r.bldg.kind)],['構造',nz(r.bldg.struct),'階数・所在階',nz(d.stories)],['床面積(登記)',nz(r.bldg.floorArea,'㎡'),'間取り・戸数',esc(p.layout)],['新築年月日',r.bldg.built?WA(r.bldg.built)+'(築'+Math.floor(yearsBetween(r.bldg.built,todayStr()))+'年)':'築'+esc(p.age)+'年','耐震基準',r.bldg.built?(r.bldg.built<'1981-06-01'?'旧耐震(1981年5月以前)':'新耐震'):''],['設備・仕様',nz(d.equip)],['法定耐用年数',L?L.L+'年(経過'+L.el+'年/残存 簡便法 約'+L.rem+'年)':'','融資期間の目安',L?(L.loan>0?'残り法定耐用年数 約'+L.loan+'年':'法定耐用年数を超過(金融機関ごとに個別判断)'):''],['管理',nz(d.mgmtForm)+(d.manager?'('+esc(d.manager)+')':''),'駐車場',nz(d.parking)]])}`}
+ <h2 class="c2">２．土地に関する事項</h2>${T([['地番',nz(r.land.lot),'地目',nz(r.land.category)],['地積(登記)',nz(r.land.area,'㎡'),'敷地面積(概要)',nz(d.siteArea,'㎡')],['土地の権利',nz(d.rightType),'区域区分',nz(d.district)],['用途地域',nz(d.zoning),'防火指定',nz(d.fire)],['建ぺい率',nz(d.coverage,'%'),'容積率(指定/実効目安)',nz(d.far,'%')+(isFinite(farLimit(d))&&farLimit(d)<num(d.far)?' / '+farLimit(d).toFixed(0)+'%(道路幅員制限)':'')],['接道状況',(d.roadDir?esc(d.roadDir)+'側 ':'')+nz(d.roadKind)+(d.roadWidth?' 幅員'+esc(d.roadWidth)+'m':'')+(d.frontage?' 接道'+esc(d.frontage)+'m':''),'坪単価',isFinite(tsubo(p))?man(tsubo(p)):'']])}
+ ${isL?'':`<h2 class="c3">３．建物に関する事項</h2>${T([['家屋番号',nz(r.bldg.no),'種類',nz(r.bldg.kind)],['構造',nz(r.bldg.struct),'階数・所在階',nz(d.stories)],['床面積(登記)',nz(r.bldg.floorArea,'㎡'),'間取り・戸数',esc(p.layout)],['新築年月日',r.bldg.built?WA(r.bldg.built)+'(築'+Math.floor(yearsBetween(r.bldg.built,todayStr()))+'年)':'築'+esc(p.age)+'年','耐震基準(新築日で簡易判定)',r.bldg.built?(r.bldg.built<'1981-06-01'?'旧耐震(1981年5月以前)':'新耐震'):''],['設備・仕様',nz(d.equip)],['法定耐用年数',L?L.L+'年[住宅用](経過'+L.el+'年/残存 簡便法 約'+L.rem+'年)':'','融資期間の目安',L?(L.loan>0?'残り法定耐用年数 約'+L.loan+'年':'法定耐用年数を超過(金融機関ごとに個別判断)'):''],['管理',nz(d.mgmtForm)+(d.manager?'('+esc(d.manager)+')':''),'駐車場',nz(d.parking)]])}`}
  <h2 class="c4">${isL?'３':'４'}．取引条件</h2>${T([['売買価格',yen(p.price)+'('+man(p.price)+')','㎡単価',isFinite(sqm(p))?yen(sqm(p)):''],['管理費・修繕積立金',p.mgmt?yen(p.mgmt)+'/月':'','固定資産税等',p.tax?yen(p.tax)+'/年':''],['周辺環境・学区',nz(d.school)]])}
  ${p.purpose==='投資'&&p.rent>0?`<h2 class="c5">${isL?'４':'５'}．収益に関する事項(参考)</h2>${T([['満室想定賃料',yen(p.rent)+'/月('+yen(p.rent*12)+'/年)','表面利回り',pct(gross(p))],['年間経費(管理費・税)',yen(p.mgmt*12+p.tax),'実質利回り(簡易)',pct(net(p))]])}<p style="font-size:11px">空室損失・運営費・大規模修繕は含まない概算です。</p>`:''}
- <h2 class="c6">${isL?(p.purpose==='投資'&&p.rent>0?'５':'４'):(p.purpose==='投資'&&p.rent>0?'６':'５')}．登記記録の概要</h2>${T([['所有者(甲区)',cur?esc(cur.holder)+'('+WA(cur.date)+' '+esc(cur.purpose)+')':'未入力','売主との照合',cur&&d.seller?(String(cur.holder).replace(/[\s　]/g,'').includes(String(d.seller).replace(/[\s　]/g,''))?'一致':'<b>不一致(要確認)</b>'):''],['担保権(乙区)',mort.length?mort.length+'件(合計 '+yen(msum)+')':'なし',' 登記情報取得日',r.acquired?WA(r.acquired):'未入力']])}
+ <h2 class="c6">${isL?(p.purpose==='投資'&&p.rent>0?'５':'４'):(p.purpose==='投資'&&p.rent>0?'６':'５')}．登記記録の概要</h2>${T([['所有者(甲区)',ownTxt,'売主との照合',sellOk],['担保権(乙区)',mort.length?mort.length+'件(合計 '+yen(msum)+')':'なし',' 登記情報取得日',r.acquired?WA(r.acquired):'未入力']])}
  <h2 class="c7">留意事項(自動抽出)</h2>${warn.length?`<ul>${warn.map(i=>`<li><span class="lv lv-${i.level}">${i.level}</span> <b>${esc(i.title)}</b>${i.detail?'　'+esc(i.detail):''}</li>`).join('')}</ul>`:'<p>登記・法令面の重大な指摘事項は現時点で検出されていません。</p>'}
  ${p.note?`<h2 class="c8">備考・メモ</h2><p>${esc(p.note)}</p>`:''}${d.special?`<h2 class="c1">特記事項</h2><p>${esc(d.special)}</p>`:''}
  <div class="foot">※ 本書は入力された情報をもとに作成した参考資料です。宅地建物取引業法第35条に基づく重要事項説明書の代わりにはなりません。取引の前に、登記事項証明書の原本、役所調査、宅地建物取引士・司法書士・弁護士等の専門家の確認を受けてください。</div>`}
 function docTouki(p){
  ensure(p);const r=p.reg,A=analyze(p),V2=verdict(A),isL=p.type==='土地';
- const kou=[...r.kou].sort((a,b)=>(+a.no||0)-(+b.no||0)),own=kou.filter(e=>OWN.test(e.purpose)&&!OWN_X.test(e.purpose)&&!e.cleared&&e.date);
- const hist=own.map((e,i)=>{const to=own[i+1]?own[i+1].date:todayStr(),y=yearsBetween(e.date,to);return `<tr><td>${esc(e.no)}</td><td>${WA(e.date)}</td><td>${esc(e.purpose)}</td><td>${esc(e.cause)}</td><td>${esc(e.holder)}</td><td class="r">${y.toFixed(1)}年${own[i+1]?'':'(現在まで)'}</td></tr>`}).join('');
- const mort=r.otsu.filter(e=>!e.cleared&&MORT.test(e.purpose));
+ const kou=[...r.kou].sort((a,b)=>String(a.scope||'').localeCompare(String(b.scope||''),'ja')||(+a.no||0)-(+b.no||0)),own=ownership(p).own.filter(e=>e.date).sort((a,b)=>a.date.localeCompare(b.date));
+ const hist=own.map((e,i)=>{const nx=own.slice(i+1).find(n=>!e.scope||!n.scope||e.scope===n.scope),to=nx?nx.date:todayStr(),y=yearsBetween(e.date,to);return `<tr><td>${esc(e.no)}</td><td>${WA(e.date)}</td><td>${esc(e.purpose)}${e.scope?'['+esc(e.scope)+']':''}</td><td>${esc(e.cause)}</td><td>${esc(e.holder)}</td><td class="r">${y.toFixed(1)}年${nx?'':'(現在まで)'}</td></tr>`}).join('');
+ const mort=activeMort(p).list;
  const order=['重大','注意','確認','良好'];
  const todo=[];
  mort.forEach(e=>todo.push(`乙区${esc(e.no)}番(${esc(e.purpose)}/${esc(e.holder)})の抹消:残債の全額弁済、抹消に必要な書類の受領、決済と同日の抹消登記申請`));
  kou.filter(e=>BAD.test(e.purpose)&&!e.cleared).forEach(e=>todo.push(`甲区${esc(e.no)}番(${esc(e.purpose)}/${esc(e.holder)})の解除・抹消:解除の証明書類を確認し、残る場合は取引を保留`));
  todo.push('売主本人の確認(本人確認書類・印鑑証明・登記識別情報)と、登記名義人との一致確認','決済直前に最新の登記事項証明書を再取得し、本書との差異を確認','所有権移転登記(買主名義)と、融資を利用する場合は抵当権設定登記の申請(司法書士)','固定資産税・管理費等の精算、引渡し(鍵・書類)の確認');
- const rowsK=kou.map(e=>`<tr><td>${esc(e.no)}</td><td>${esc(e.purpose)}</td><td>${WA(e.date)}</td><td>${esc(e.cause)}</td><td>${esc(e.holder)}</td><td>${e.cleared?'抹消済・解除済':'有効'}</td></tr>`).join('')||'<tr><td colspan="6">記載なし</td></tr>';
- const rowsO=r.otsu.map(e=>`<tr><td>${esc(e.no)}</td><td>${esc(e.purpose)}</td><td>${WA(e.date)}</td><td class="r">${e.amount?yen(num(e.amount)):''}</td><td>${esc(e.interest)}</td><td>${esc(e.debtor)}</td><td>${esc(e.holder)}</td><td>${e.cleared?'抹消済':'有効'}</td></tr>`).join('')||'<tr><td colspan="8">記載なし</td></tr>';
+ const rowsK=kou.map(e=>`<tr><td>${esc(e.no)}</td><td>${esc(e.scope||'共通')}</td><td>${esc(e.purpose)}</td><td>${WA(e.date)}</td><td>${esc(e.cause)}</td><td>${esc(e.holder)}</td><td>${e.cleared?'抹消済・解除済':'有効'}</td></tr>`).join('')||'<tr><td colspan="7">記載なし</td></tr>';
+ const rowsO=r.otsu.map(e=>`<tr><td>${esc(e.no)}</td><td>${esc(e.scope||'共通')}</td><td>${esc(e.purpose)}</td><td>${WA(e.date)}</td><td class="r">${e.amount?yen(num(e.amount)):''}</td><td>${esc(e.interest)}</td><td>${esc(e.debtor)}</td><td>${esc(e.holder)}</td><td>${e.cleared?'抹消済':'有効'}</td></tr>`).join('')||'<tr><td colspan="9">記載なし</td></tr>';
  return `<h1>登 記 分 析 書</h1><div class="sub">作成日 ${WA(todayStr())}　／　物件:${esc(p.name)}　／　登記情報取得日:${r.acquired?WA(r.acquired):'未入力'}</div>
  <div class="box"><div><div style="font-size:11px">総合判定</div><div class="big">${esc(V2.label)}</div></div><div><div style="font-size:11px">スコア</div><div class="big">${V2.score}<span style="font-size:13px"> / 100</span></div></div>
  <div>${order.map(k=>`<span class="lv lv-${k}">${k}</span> ${V2.c[k]}件　`).join('')}</div></div>
  <h2>１．表題部</h2>${T([['土地の所在',esc(r.land.place),'地番',esc(r.land.lot)],['地目',esc(r.land.category),'地積',nz(r.land.area,'㎡')],...(isL?[]:[['建物の所在',esc(r.bldg.place),'家屋番号',esc(r.bldg.no)],['種類',esc(r.bldg.kind),'構造',esc(r.bldg.struct)],['床面積',nz(r.bldg.floorArea,'㎡'),'新築年月日',r.bldg.built?WA(r.bldg.built):'']])])}
- <h2>２．権利部(甲区:所有権に関する事項)</h2><table><thead><tr><th>順位</th><th>登記の目的</th><th>受付年月日</th><th>原因</th><th>権利者その他の事項</th><th>状態</th></tr></thead><tbody>${rowsK}</tbody></table>
- <h2>３．権利部(乙区:所有権以外の権利に関する事項)</h2><table><thead><tr><th>順位</th><th>登記の目的</th><th>受付年月日</th><th>債権額・極度額</th><th>利息</th><th>債務者</th><th>権利者</th><th>状態</th></tr></thead><tbody>${rowsO}</tbody></table>${r.joint?`<p>共同担保:${esc(r.joint)}</p>`:''}
+ <h2>２．権利部(甲区:所有権に関する事項)</h2><table><thead><tr><th>順位</th><th>対象</th><th>登記の目的</th><th>受付年月日</th><th>原因</th><th>権利者その他の事項</th><th>状態</th></tr></thead><tbody>${rowsK}</tbody></table>
+ <h2>３．権利部(乙区:所有権以外の権利に関する事項)</h2><table><thead><tr><th>順位</th><th>対象</th><th>登記の目的</th><th>受付年月日</th><th>債権額・極度額</th><th>利息</th><th>債務者</th><th>権利者</th><th>状態</th></tr></thead><tbody>${rowsO}</tbody></table>${r.joint?`<p>共同担保:${esc(r.joint)}</p>`:''}
  <h2>４．所有権の履歴と保有期間</h2><table><thead><tr><th>順位</th><th>受付年月日</th><th>目的</th><th>原因</th><th>取得者</th><th>保有期間</th></tr></thead><tbody>${hist||'<tr><td colspan="6">履歴なし</td></tr>'}</tbody></table>
  <h2>５．分析結果と対応</h2>${order.map(k=>A.filter(i=>i.level===k).map(i=>`<div class="item"><span class="lv lv-${k}">${k}</span> <b>${esc(i.title)}</b><div>${esc(i.detail)}</div>${i.action?`<div class="act">▶ 対応:${esc(i.action)}</div>`:''}</div>`).join('')).join('')}
  <h2>６．決済までのチェックリスト</h2><ul style="list-style:none;padding-left:4px">${todo.map(t=>`<li>☐ ${t}</li>`).join('')}</ul>
+ <h2>７．判定基準</h2><table><tr><th>重大</th><td>名義不一致/差押・仮差押・仮登記・買戻・信託等の残存/差押後の贈与/担保権合計が売買価格超過/農地/未登記建物/接道2m未満/市街化調整区域。各25点減</td></tr>
+ <tr><th>注意</th><td>抵当権の残存/共有/短期保有(2年未満)/旧耐震/借地権/建ぺい率・容積率超過/セットバック/面積差3%超 等。各8点減</td></tr>
+ <tr><th>確認</th><td>登記情報が3か月超/相続取得/売主未入力/共同担保/入力不足 等。各2点減</td></tr>
+ <tr><th>総合判定</th><td>重大が1件以上=要精査 / 注意が1件以上=条件付き / 確認のみ=概ね良好 / なし=良好(スコアは100点から減点、下限0)</td></tr>
+ <tr><th>容積率の制限</th><td>前面道路幅員が12m未満の場合、幅員×0.4(住居系)または×0.6(その他)と指定容積率の小さい方で判定(特定行政庁の指定で異なる場合あり)</td></tr>
+ <tr><th>担保権の集計</th><td>土地・建物に同一内容(目的・権利者・金額・受付日)の担保権が付く場合は1件として集計</td></tr></table>
  <div class="foot">※ 本書は入力された登記情報にもとづく簡易分析であり、法的助言ではありません。判定基準は一般的な実務上の着眼点です。実際の取引では、登記事項証明書の原本を確認のうえ、司法書士・弁護士・宅地建物取引士等の専門家にご相談ください。</div>`}
 
 /* ---- 書類タブ ---- */
 let docId='',docKind='gaiyo';const openSec={};
 const getP=(o,path)=>path.split('.').reduce((a,k)=>a?.[k],o);
 function setP(o,path,v){const k=path.split('.'),l=k.pop();k.reduce((a,x)=>a[x],o)[l]=v}
-const KOU_COLS=[['no','順位','number',60],['purpose','登記の目的','text',130],['date','受付年月日','date',140],['cause','原因','text',150],['holder','権利者その他','text',180]];
-const OTSU_COLS=[['no','順位','number',60],['purpose','登記の目的','text',130],['date','受付年月日','date',140],['amount','債権額・極度額(円)','number',130],['interest','利息','text',90],['debtor','債務者','text',110],['holder','権利者','text',130]];
+const SCOPE_OPT=['','土地','建物'];
+const KOU_COLS=[['no','順位','number',60],['scope','対象','select',110,SCOPE_OPT],['purpose','登記の目的','text',130],['date','受付年月日','date',140],['cause','原因','text',150],['holder','権利者その他','text',180]];
+const OTSU_COLS=[['no','順位','number',60],['scope','対象','select',110,SCOPE_OPT],['purpose','登記の目的','text',130],['date','受付年月日','date',140],['amount','債権額・極度額(円)','number',130],['interest','利息','text',90],['debtor','債務者','text',110],['holder','権利者','text',130]];
 function docTab(){
  if(!S.props.length){V('<div class="card"><p>物件がありません。「物件検索」で登録してください。</p></div>');return}
  if(!byId(docId))docId=(S.props.find(p=>p.reg)||S.props[0]).id;
@@ -569,7 +611,7 @@ function docTab(){
  const sel=(path,label,opts)=>`<label>${label}<select data-path="${path}"><option value=""></option>${opts.map(o=>`<option ${getP(p,path)===o?'selected':''}>${o}</option>`).join('')}</select></label>`;
  const tx=(path,label,type='text',x='')=>`<label>${label}<input data-path="${path}" type="${type}" value="${esc(getP(p,path))}" ${x}></label>`;
  const ta=(path,label)=>`<label class="w">${label}<textarea data-path="${path}" rows="2">${esc(getP(p,path))}</textarea></label>`;
- const tbl=(list,cols)=>`<div class="scroll"><table class="tbl-in"><tr>${cols.map(c=>`<th>${c[1]}</th>`).join('')}<th>抹消済</th><th></th></tr>${r[list].map((e,i)=>`<tr>${cols.map(c=>`<td><input data-list="${list}" data-i="${i}" data-f="${c[0]}" type="${c[2]}" value="${esc(e[c[0]])}" style="width:${c[3]}px"></td>`).join('')}<td><input type="checkbox" data-list="${list}" data-i="${i}" data-f="cleared" ${e.cleared?'checked':''}></td><td><button class="btn dng" data-del="${list}:${i}" style="padding:2px 8px">×</button></td></tr>`).join('')}</table></div><button class="btn" data-add="${list}" style="margin-top:6px">＋ 行を追加</button>`;
+ const tbl=(list,cols)=>`<div class="scroll"><table class="tbl-in"><tr>${cols.map(c=>`<th>${c[1]}</th>`).join('')}<th>抹消済</th><th></th></tr>${r[list].map((e,i)=>`<tr>${cols.map(c=>`<td>${c[2]==='select'?`<select data-list="${list}" data-i="${i}" data-f="${c[0]}" style="width:${c[3]}px">${c[4].map(o=>`<option value="${o}" ${(e[c[0]]||'')===o?'selected':''}>${o||'共通(一体)'}</option>`).join('')}</select>`:`<input data-list="${list}" data-i="${i}" data-f="${c[0]}" type="${c[2]}" value="${esc(e[c[0]])}" style="width:${c[3]}px">`}</td>`).join('')}<td><input type="checkbox" data-list="${list}" data-i="${i}" data-f="cleared" ${e.cleared?'checked':''}></td><td><button class="btn dng" data-del="${list}:${i}" style="padding:2px 8px">×</button></td></tr>`).join('')}</table></div><button class="btn" data-add="${list}" style="margin-top:6px">＋ 行を追加</button>`;
  const sec=(id,title,body)=>`<details class="card noprint" data-sec="${id}" ${openSec[id]?'open':''}><summary>${title}</summary>${body}</details>`;
  V(`<div class="card noprint"><div class="row"><label>物件<select id="dp">${S.props.map(x=>`<option value="${x.id}" ${x.id===docId?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
  <div class="fit"><div class="seg"><button data-kind="gaiyo" class="${docKind==='gaiyo'?'on':''}">物件概要書</button><button data-kind="touki" class="${docKind==='touki'?'on':''}">登記分析書</button></div></div>
@@ -582,7 +624,7 @@ function docTab(){
  ${tx('det.totalFloor','延床面積(㎡)','number','step="0.01"')}${tx('det.stories','階数・所在階')}${sel('det.mgmtForm','管理形態',['自主管理','全部委託','一部委託','なし'])}${tx('det.manager','管理会社')}${tx('det.parking','駐車場')}${tx('det.school','周辺環境・学区')}
  ${ta('det.equip','設備・仕様')}${ta('det.special','特記事項')}</div>`)}
  ${sec('hyo','登記:表題部・取得日',`<div class="form">${tx('reg.acquired','登記情報の取得日','date')}<span></span>${tx('reg.land.place','土地の所在')}${tx('reg.land.lot','地番')}${sel('reg.land.category','地目',['宅地','田','畑','山林','原野','雑種地','公衆用道路','その他'])}${tx('reg.land.area','地積(㎡)','number','step="0.01"')}
- ${tx('reg.bldg.place','建物の所在')}${tx('reg.bldg.no','家屋番号')}${tx('reg.bldg.kind','種類(居宅・共同住宅など)')}${sel('reg.bldg.struct','構造',Object.keys(LIFE).concat('その他'))}${tx('reg.bldg.floorArea','床面積(㎡)','number','step="0.01"')}${tx('reg.bldg.built','新築年月日','date')}
+ ${tx('reg.bldg.place','建物の所在')}${tx('reg.bldg.no','家屋番号')}${tx('reg.bldg.kind','種類(居宅・共同住宅など)')}${sel('reg.bldg.struct','構造',STRUCTS.concat('その他'))}${tx('reg.bldg.floorArea','床面積(㎡)','number','step="0.01"')}${tx('reg.bldg.built','新築年月日','date')}
  ${tx('reg.joint','共同担保(他の不動産との同時担保の内容)')}</div>`)}
  ${sec('map','地図・写真',`<div class="form">${tx('geo.lat','緯度','number','step="0.000001"')}${tx('geo.lng','経度','number','step="0.000001"')}${sel('geo.zoom','地図の縮尺(ズーム)',['14','15','16','17','18'])}${sel('geo.layer','地図の種類',Object.keys(LAYERS))}
  <div class="w row" style="align-items:center"><button class="btn fit" id="gs">所在地から位置を検索</button><span class="note">国土地理院の住所検索を使います(ネット接続が必要)。緯度経度の直接入力もできます。地図の種類: std=標準 / pale=淡色 / seamlessphoto=航空写真</span></div>
@@ -597,9 +639,9 @@ function docTab(){
  const h=e=>{const t=e.target,q=byId(docId);if(!q)return;
   if(t.id==='dp'){docId=t.value;docTab();return}
   if(t.id==='pf'){addPhotos(q,[...t.files]).then(()=>{openSec.map=true;docTab()});return}
-  if(t.dataset.pcap!==undefined){q.photos[+t.dataset.pcap].cap=t.value;save();pv()}
-  else if(t.dataset.path){setP(ensure(q),t.dataset.path,t.value);save();pv()}
-  else if(t.dataset.list){const row=q.reg[t.dataset.list][+t.dataset.i];if(row){row[t.dataset.f]=t.type==='checkbox'?t.checked:t.value;save();pv()}}};
+  if(t.dataset.pcap!==undefined){q.photos[+t.dataset.pcap].cap=t.value;saveSoon();pv()}
+  else if(t.dataset.path){setP(ensure(q),t.dataset.path,t.value);saveSoon();pv()}
+  else if(t.dataset.list){const row=q.reg[t.dataset.list][+t.dataset.i];if(row){row[t.dataset.f]=t.type==='checkbox'?t.checked:t.value;saveSoon();pv()}}};
  v.oninput=h;v.onchange=h;
  v.onclick=e=>{const q=byId(docId),b=e.target.closest('button');if(!b)return;
   if(b.dataset.kind){docKind=b.dataset.kind;docTab()}
@@ -630,15 +672,15 @@ function data(){
  $('#ec').onclick=()=>download('物件一覧.csv',toCSV(),'text/csv');
  $('#ej').onclick=()=>download('realestate-backup.json',JSON.stringify(S,null,1),'application/json');
  $('#fi').onchange=async e=>{const f=e.target.files[0];if(!f)return;const t=await f.text();
-  try{if(f.name.endsWith('.json')){const j=JSON.parse(t);if(!Array.isArray(j.props))throw 0;if(!confirm('現在のデータをすべて置き換えます。よろしいですか？'))return;S={props:j.props,cmp:[],sim:j.sim||{}}}
+  try{if(f.name.endsWith('.json')){const j=JSON.parse(t);if(!Array.isArray(j.props))throw 0;if(!confirm('現在のデータをすべて置き換えます。よろしいですか？'))return;S=stateFrom(j)}
   else{const R=parseCSV(t);R.shift();let n=0;for(const r of R){const o={id:uid(),fav:false};COLS.forEach((c,i)=>{const v=r[i]??'';o[c]=['walk','price','rent','area','age','mgmt','tax'].includes(c)?(+v||0):v});
-   if(!TYPES.includes(o.type))o.type=TYPES[0];if(!STATUSES.includes(o.status))o.status=STATUSES[0];if(!['居住','投資'].includes(o.purpose))o.purpose='居住';if(o.name){S.props.push(o);n++}}toast(n+'件を追加しました')}
+   const c=sanitizeProp(o);if(c&&c.name){S.props.push(c);n++}}toast(n+'件を追加しました')}
   save();render()}catch(err){toast('読み込めませんでした')}};
  $('#rs').onclick=()=>{if(confirm('サンプルデータに戻します。現在のデータは失われます。')){localStorage.removeItem(KEY);load();attachSamples();attachGeo();save();render()}};
  $('#rm').onclick=()=>{if(confirm('全データを消去します。よろしいですか？')){S={props:[],cmp:[],sim:{}};save();render()}};
  $('#view').onclick=null;
 }
-render();
+load();attachSamples();attachGeo();render();
 </script>
 </body>
 </html>
