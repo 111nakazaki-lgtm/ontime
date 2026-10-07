@@ -68,6 +68,7 @@ def main(argv):
     else:
         ap.error("text か --queue が必要です")
 
+    text = text.replace("\\n", "\n")  # キューの \n を改行に変える
     print(f"[{len(text)}/{MAX_LEN}] {text}")
     if len(text) > MAX_LEN:
         sys.exit("長すぎます")
