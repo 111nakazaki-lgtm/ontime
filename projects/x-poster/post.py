@@ -72,7 +72,7 @@ def pop_queue(path: str) -> str:
     for i, l in enumerate(lines):
         if l.strip() and not l.startswith("#"):
             return l, lines[:i] + lines[i + 1:]
-    sys.exit("キューが空です")
+    return None, None
 
 
 def main(argv):
@@ -85,6 +85,9 @@ def main(argv):
     rest = None
     if a.queue:
         text, rest = pop_queue(a.queue)
+        if text is None:
+            print("キューが空です。何も投稿しません")
+            return
     elif a.text:
         text = a.text
     else:

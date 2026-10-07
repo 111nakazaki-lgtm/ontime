@@ -1,0 +1,58 @@
+name: scheduled-post
+
+on:
+  schedule:
+    - cron: "0 0 * * *"   # 毎日 09:00 JST (UTC 00:00)
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "実際に投稿する (false なら確認のみ)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # 投稿したキューの行を消してコミットするため
+
+concurrency:
+  group: scheduled-post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    env:
+      # 定期実行(schedule)では常に投稿。手動実行では入力の値に従う
+      SEND: ${{ github.event_name == 'schedule' || inputs.send }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post to X
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+        run: |
+          flag=""; [ "$SEND" = "true" ] && flag="--send"
+          if [ "$SEND" = "true" ] && [ -z "$X_API_KEY" ]; then echo "X のシークレット未設定のためスキップ"; exit 0; fi
+          python3 projects/x-poster/post.py --queue projects/x-poster/queue.txt $flag
+
+      - name: Post to Threads
+        env:
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+        run: |
+          flag=""; [ "$SEND" = "true" ] && flag="--send"
+          if [ "$SEND" = "true" ] && [ -z "$THREADS_ACCESS_TOKEN" ]; then echo "Threads のシークレット未設定のためスキップ"; exit 0; fi
+          python3 projects/threads-poster/post.py --queue projects/threads-poster/queue.txt $flag
+
+      - name: Commit updated queues
+        if: env.SEND == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add projects/x-poster/queue.txt projects/threads-poster/queue.txt
+          git diff --cached --quiet && exit 0
+          git commit -m "Update post queues after scheduled post"
+          git pull --rebase
+          git push
