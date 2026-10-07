@@ -109,6 +109,7 @@ function sanitizeProp(p){
   o.reg={acquired:dt(r.acquired),joint:cleanStr(r.joint,500),land:Object.fromEntries(['place','lot','category','area'].map(k=>[k,cleanStr(r.land?.[k],200)])),
    bldg:{...Object.fromEntries(['place','no','kind','floorArea'].map(k=>[k,cleanStr(r.bldg?.[k],200)])),struct:STRUCT_LEGACY[st]||st,built:dt(r.bldg?.built)},
    kou:rows(r.kou,['no','purpose','date','cause','holder']),otsu:rows(r.otsu,['no','purpose','date','cause','holder','amount','interest','debtor'])}}
+ if(p.inv&&typeof p.inv==='object')o.inv=Object.fromEntries(Object.keys(INV_DEF).map(k=>[k,cleanStr(p.inv[k],20)]));
  if(p.geo&&typeof p.geo==='object'){const la=parseFloat(p.geo.lat),ln=parseFloat(p.geo.lng);o.geo={lat:isFinite(la)&&Math.abs(la)<=85?String(la):'',lng:isFinite(ln)&&Math.abs(ln)<=180?String(ln):'',zoom:['14','15','16','17','18'].includes(String(p.geo.zoom))?String(p.geo.zoom):'16',layer:LAYERS[p.geo.layer]?p.geo.layer:'std'}}
  if(Array.isArray(p.photos))o.photos=p.photos.filter(x=>x&&safeImg(x.src)).slice(0,12).map(x=>({src:x.src,cap:cleanStr(x.cap,200)}));
  return o}
@@ -215,7 +216,7 @@ function card(p){
  <div class="meta">${esc(p.layout)}・${esc(p.area)}㎡・築${esc(p.age)}年${isFinite(tsubo(p))?`・坪単価 ${man(tsubo(p))}`:''}</div>
  ${isFinite(g)?`<div class="meta">想定家賃 ${yen(p.rent)}/月・表面利回り <b>${pct(g)}</b></div>`:''}
  ${p.note?`<div class="meta">📝 ${esc(p.note)}</div>`:''}
- <div class="acts"><button class="btn" data-a="cmp">${S.cmp.includes(p.id)?'比較から外す':'比較に追加'}</button><button class="btn" data-a="sim">試算</button><button class="btn" data-a="gaiyo">概要書</button><button class="btn" data-a="touki">登記分析</button><button class="btn" data-a="edit">編集</button><button class="btn dng" data-a="del">削除</button></div></div>`;
+ <div class="acts"><button class="btn" data-a="cmp">${S.cmp.includes(p.id)?'比較から外す':'比較に追加'}</button><button class="btn" data-a="sim">試算</button><button class="btn" data-a="gaiyo">概要書</button><button class="btn" data-a="toshi">投資分析</button><button class="btn" data-a="touki">登記分析</button><button class="btn" data-a="edit">編集</button><button class="btn dng" data-a="del">削除</button></div></div>`;
 }
 function listClick(e){
  const b=e.target.closest('[data-a]');if(!b)return;
@@ -223,7 +224,7 @@ function listClick(e){
  if(a==='fav'){p.fav=!p.fav;save();cards()}
  else if(a==='cmp'){const i=S.cmp.indexOf(id);if(i>=0)S.cmp.splice(i,1);else if(S.cmp.length>=3)return toast('比較は3件までです');else S.cmp.push(id);save();renderNav();cards()}
  else if(a==='sim'){simId=id;tab='sim';render()}
- else if(a==='gaiyo'||a==='touki'){docId=id;docKind=a;tab='doc';render()}
+ else if(a==='gaiyo'||a==='toshi'||a==='touki'){docId=id;docKind=a;tab='doc';render()}
  else if(a==='edit')editDlg(p);
  else if(a==='del'&&confirm(`「${p.name}」を削除しますか？`)){S.props=S.props.filter(x=>x.id!==id);S.cmp=S.cmp.filter(x=>x!==id);save();renderNav();cards()}
 }
@@ -355,7 +356,7 @@ function ensure(p){
  p.det=Object.assign({},DET_DEF,p.det);const r=p.reg=p.reg||{};
  r.land=Object.assign({place:'',lot:'',category:'宅地',area:''},r.land);
  r.bldg=Object.assign({place:'',no:'',kind:'',struct:'',floorArea:'',built:''},r.bldg);
- r.kou=r.kou||[];r.otsu=r.otsu||[];r.acquired=r.acquired||'';r.joint=r.joint||'';p.geo=Object.assign({lat:'',lng:'',zoom:'16',layer:'std'},p.geo);p.photos=Array.isArray(p.photos)?p.photos:[];return p}
+ r.kou=r.kou||[];r.otsu=r.otsu||[];r.acquired=r.acquired||'';r.joint=r.joint||'';p.geo=Object.assign({lat:'',lng:'',zoom:'16',layer:'std'},p.geo);p.inv=Object.assign({},INV_DEF,p.inv);p.photos=Array.isArray(p.photos)?p.photos:[];return p}
 function attachSamples(){S.props.forEach(p=>{if(SAMPLE_X[p.id]&&!p.reg&&!p.det)Object.assign(p,JSON.parse(JSON.stringify(SAMPLE_X[p.id])))})}
 
 const WA=d=>{if(!d)return '';if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return esc(d);const [y,m,dd]=d.split('-').map(Number);
@@ -483,6 +484,7 @@ const SAMPLE_D={
 SAMPLE_X.s6={det:{seller:'(サンプル)商事株式会社',dealType:'売主',occupancy:'満室稼働中',delivery:'相談',rightType:'所有権',district:'市街化区域',zoning:'商業地域',coverage:'80',far:'600',fire:'防火地域',heightDistrict:'',roadDir:'南',roadKind:'公道(42条1項1号)',roadWidth:'12',frontage:'9.5',siteArea:'180',footprint:'140',totalFloor:'1050',stories:'地上5階建',floorsAbove:'5',floorsBelow:'0',roof:'陸屋根',units:'6区画',elevator:'有',inspection:'有',transit:'JR根岸線「関内」駅・横浜市営地下鉄ブルーライン「関内」駅',currentRent:'850000',occupancyRate:'100',mgmtForm:'全部委託',manager:'(サンプル)ビルマネジメント',parking:'なし',special:'各フロア用途：1F 店舗、2〜4F 事務所、5F 店舗。\n1階テナントの契約期間が残り2年。\n建蔽率・容積率は用途地域の複合に注意。'},
  reg:{acquired:'2026-09-01',land:{place:'神奈川県横浜市中区○○町',lot:'3番2',category:'宅地',area:'180.00'},bldg:{place:'神奈川県横浜市中区○○町3番地2',no:'3番2',kind:'店舗・事務所',struct:'鉄骨鉄筋コンクリート造',floorArea:'210.0',built:'2001-03-20'},
   kou:[{no:'1',purpose:'所有権移転',date:'2012-04-10',cause:'平成24年4月1日売買',holder:'(サンプル)商事株式会社'}],otsu:[],joint:''}};
+SAMPLE_X.s6.inv={down:'30',rate:'2.2',years:'25',vac:'5',cost:'7',other:'600000',hold:'10',growth:'-1',tax2:'20'};
 SAMPLE_G.s6={geo:{lat:'35.4437',lng:'139.6380',zoom:'16',layer:'std'},photos:[{src:svgPhoto('(サンプル)外観','店舗・事務所ビル','#b8d4f0','#eef5fc','ext'),cap:'外観'}]};
 function attachExtra(){S.props.forEach(p=>{const e=SAMPLE_D[p.id];if(e&&p.det)Object.keys(e).forEach(k=>{if(!p.det[k])p.det[k]=e[k]})})}
 function attachGeo(){S.props.forEach(p=>{const g=SAMPLE_G[p.id];if(g){if(!p.geo)p.geo={...g.geo};if(!p.photos)p.photos=g.photos.map(x=>({...x}))}})}
@@ -555,6 +557,12 @@ const SHEET_CSS=`.doc.sheet{background:#fff;color:#111;max-width:210mm;margin:0 
 .sheet .pan .mapbox{height:100%;border:0;border-radius:0;aspect-ratio:auto!important}.sheet .pan .attr{position:absolute;right:4px;bottom:2px;font-size:6pt;color:#333;background:rgba(255,255,255,.75);padding:0 3px;z-index:3}
 .sheet .ft{display:flex;justify-content:space-between;gap:12px;border-top:2px solid #111;margin-top:6px;padding-top:4px;font-size:7.5pt}.sheet .ft .n{font-size:6.5pt;color:#555;text-align:right}
 .sheet .pg2{margin-top:8mm;break-before:page}.sheet .ph-grid.g3{grid-template-columns:repeat(3,1fr)}.sheet .ph-grid.g3 img{aspect-ratio:4/3}
+.sheet .cols2{display:grid;grid-template-columns:1fr 1fr;gap:0 9px}.sheet .cols2>div{min-width:0}
+.sheet table.k{margin-top:0}.sheet table.k th{text-align:left;width:auto;white-space:normal;font-weight:600;font-size:8pt;padding:2.5px 7px}
+.sheet table.k td{font-size:8.5pt;padding:2.5px 7px}.sheet td.n{text-align:right;white-space:nowrap}.sheet td.c{text-align:center}.sheet td.neg{font-weight:700}.sheet td.base{font-weight:800;outline:2px solid #111;outline-offset:-2px}
+.sheet table.k.t5 th{text-align:center;font-size:7.5pt;white-space:nowrap;padding:2.5px 4px}.sheet table.k.t5 td{padding:2.5px 5px;font-size:8pt}
+.sheet .chart{border:1px solid #999;border-top:0;padding:4px 6px}.sheet .obs p{margin:0 0 3px}.sheet .obs .tag{display:inline-block;border:1px solid #111;font-size:7pt;font-weight:700;padding:0 5px;margin-right:4px;min-width:3em;text-align:center}
+.sheet .notes{border:1px solid #999;padding:4px 8px;margin-top:6px;font-size:7pt;color:#444}
 @media(max-width:700px){.doc.sheet{padding:6px;font-size:8pt}.sheet .pricebox .big{font-size:17pt}}
 `;
 const st=document.createElement('style');st.textContent=DOC_CSS+MAP_CSS+SHEET_CSS+`
@@ -589,7 +597,7 @@ function docGaiyo(p){
  const floorsTxt=d.floorsAbove?`地上${esc(d.floorsAbove)}階建${d.floorsBelow&&+d.floorsBelow>0?'（地下'+esc(d.floorsBelow)+'階）':''}`:esc(d.stories);
  const built=r.bldg.built,by=built?+built.slice(0,4):NaN,nowY=td.getFullYear();
  const chiku=built?`${WAym(built)}（${by}年・築${nowY-by}年）`:(p.age?`築${esc(p.age)}年`:'');
- const fullRent=p.rent*12,exp=p.mgmt*12+p.tax,cr=isFinite(num(d.costRate))?num(d.costRate):7,tot=p.price*(1+cr/100);
+ const fullRent=p.rent*12,exp=p.mgmt*12+p.tax,cr=isFinite(num(d.costRate))?num(d.costRate):(isFinite(num(p.inv.cost))?num(p.inv.cost):7),tot=p.price*(1+cr/100);
  const gy=p.price>0&&p.rent>0?fullRent/p.price:NaN,ny=p.price>0&&p.rent>0?(fullRent-exp)/tot:NaN;
  const jm=jpMoney(p.price);
  const lines=String(d.special||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);
@@ -624,6 +632,90 @@ function docGaiyo(p){
  <div class="ft"><div>${ok?`<b>${esc(iss.company||'')}</b>${iss.role?`　｜　${esc(iss.role)}`:''}<br>${[iss.name,iss.tel?'Tel：'+esc(iss.tel):'',iss.email?'Email：'+esc(iss.email):''].filter(Boolean).join('　｜　')}`:''}</div>
  <div class="n">※本資料は参考情報です。取引に際しては別途重要事項説明書をご確認ください。<br>※記載内容は調査時点のものです。登記情報・法令制限等は最新情報をご確認ください。</div></div>
  ${extra.length?`<div class="pg2"><div class="band">物　件　写　真</div><div class="ph-grid g3">${extra.map(x=>`<figure><img alt="${esc(x.cap||'')}" src="${esc(x.src)}"><figcaption>${esc(x.cap||'')}</figcaption></figure>`).join('')}</div></div>`:''}`}
+
+/* ---- 投資分析書(1枚もの) ---- */
+const INV_DEF={down:'20',rate:'1.8',years:'30',vac:'5',cost:'7',other:'0',hold:'10',growth:'0',tax2:'20'};
+const INV_NUM={down:20,rate:1.8,years:30,vac:5,cost:7,other:0,hold:10,growth:0,tax2:20};
+const SELL_COST=0.03;
+function invInput(p){ensure(p);const n=k=>isFinite(num(p.inv[k]))?num(p.inv[k]):INV_NUM[k];
+ return {price:p.price,rent:p.rent,mgmt:p.mgmt,tax:p.tax,other:n('other'),vac:n('vac'),cost:n('cost'),down:n('down'),rate:n('rate'),years:n('years'),hold:n('hold'),growth:n('growth'),tax2:n('tax2')}}
+function irr(f){const npv=r=>f.reduce((a,x,t)=>a+x/Math.pow(1+r,t),0);let lo=-0.99,hi=5;if(!(npv(lo)*npv(hi)<0))return NaN;
+ for(let i=0;i<200;i++){const m=(lo+hi)/2;if(npv(lo)*npv(m)<=0)hi=m;else lo=m}return (lo+hi)/2}
+function annualCF(D,vac,rate){const price=Math.max(0,D.price),yL=Math.max(1,Math.round(D.years)),loan=price*(1-Math.min(100,Math.max(0,D.down))/100);
+ return D.rent*12*(1-vac/100)-(D.mgmt*12+D.tax+D.other)-pmt(loan,Math.max(0,rate)/100,yL)*12}
+function invModel(D){
+ const price=Math.max(0,D.price),yL=Math.max(1,Math.round(D.years)),rt=Math.max(0,D.rate)/100,down=Math.min(100,Math.max(0,D.down))/100,vac=Math.min(100,Math.max(0,D.vac))/100;
+ const cost=price*Math.max(0,D.cost)/100,loan=price*(1-down),equity=price*down+cost,total=price+cost;
+ const gpi=Math.max(0,D.rent)*12,vloss=gpi*vac,egi=gpi-vloss,opex=D.mgmt*12+D.tax+D.other,noi=egi-opex,mp=pmt(loan,rt,yL),ds=mp*12,cf=noi-ds;
+ const hold=Math.max(1,Math.min(50,Math.round(D.hold))),rows=[],flows=[-equity];let cum=-equity;
+ for(let y=1;y<=hold;y++){const cfy=y<=yL?cf:noi;cum+=cfy;const bal=balance(loan,rt,yL,Math.min(y,yL)*12),sale=price*Math.pow(1+D.growth/100,y),sc=sale*SELL_COST,gain=Math.max(0,sale-sc-total),tx=gain*D.tax2/100,net=sale-bal-sc-tx;
+  rows.push({y,cfy,cum,bal,sale,sc,tx,net,total:cum+net});flows.push(cfy)}
+ const last=rows[rows.length-1];flows[hold]+=last.net;
+ return {price,cost,loan,equity,total,gpi,vloss,egi,opex,noi,mp,ds,cf,yL,hold,rows,
+  gross:price>0?gpi/price:NaN,cap:total>0?noi/total:NaN,ccr:equity>0?cf/equity:NaN,dscr:ds>0?noi/ds:NaN,ber:gpi>0?(opex+ds)/gpi:NaN,adsr:gpi>0?ds/gpi:NaN,payback:cf>0?equity/cf:NaN,irr:irr(flows),ltv:price>0?loan/price:NaN}}
+const manY=v=>{if(!isFinite(v))return '-';const m=Math.round(Math.abs(v)/1e4);return (v<0&&m>0?'▲':'')+m.toLocaleString('ja-JP')+'万'};
+const yenN=v=>isFinite(v)?(v<0?'▲':'')+Math.round(Math.abs(v)).toLocaleString('ja-JP')+'円':'-';
+function toshiChart(M){
+ const W=330,H=150,L=44,R=8,T=10,B=22,ys=[M.rows.map(r=>r.cum),M.rows.map(r=>r.total)].flat().concat([-M.equity,0]),mn=Math.min(...ys),mx=Math.max(...ys),h=M.hold;
+ const x=y=>L+(W-L-R)*y/h,yy=v=>T+(H-T-B)*(1-(v-mn)/((mx-mn)||1));
+ const line=(arr,dash)=>`<path d="${arr.map((v,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+yy(v).toFixed(1)).join('')}" fill="none" stroke="${dash?'#777':'#111'}" stroke-width="${dash?1.6:2.2}" ${dash?'stroke-dasharray="5 3"':''}/>`;
+ const c=[-M.equity,...M.rows.map(r=>r.cum)],t=[-M.equity,...M.rows.map(r=>r.total)];
+ const step=h<=10?1:h<=20?2:5,ticks=[];for(let y=0;y<=h;y+=step)ticks.push(y);
+ return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="累積収支の推移"><line x1="${L}" x2="${W-R}" y1="${yy(0)}" y2="${yy(0)}" stroke="#999"/>
+ ${[mn,(mn+mx)/2,mx].map(v=>`<line x1="${L}" x2="${W-R}" y1="${yy(v)}" y2="${yy(v)}" stroke="#e2e2e2"/><text x="${L-3}" y="${yy(v)+3}" text-anchor="end" font-size="7.5" fill="#444">${manY(v)}</text>`).join('')}
+ ${line(c,false)}${line(t,true)}
+ ${ticks.map(y=>`<text x="${x(y)}" y="${H-8}" text-anchor="middle" font-size="7.5" fill="#444">${y}年</text>`).join('')}
+ <text x="${W-R}" y="${yy(c[c.length-1])-4}" text-anchor="end" font-size="7.5" fill="#111">累計CF ${manY(c[c.length-1])}</text>
+ <text x="${W-R}" y="${yy(t[t.length-1])-4}" text-anchor="end" font-size="7.5" fill="#555">売却込み ${manY(t[t.length-1])}</text></svg>
+ <div class="mut sm">― 累計キャッシュフロー(自己資金控除後)　‐ ‐ 売却した場合の最終手残り(売却益課税後)</div>`}
+function docToshi(p){
+ ensure(p);const D=invInput(p),M=invModel(D),iss=S.issuer||{},L=lifeInfo(p),td=new Date();
+ const yyyymmdd=td.getFullYear()+String(td.getMonth()+1).padStart(2,'0')+String(td.getDate()).padStart(2,'0');
+ const no='I-'+yyyymmdd+'-'+String(p.id).replace(/[^A-Za-z0-9]/g,'').toUpperCase().slice(-6);
+ const r=p.reg,d=p.det,lot=(r.land.place||'').replace(/^(東京都|北海道|京都府|大阪府|.{2,3}県)/,'')+(r.land.lot||'');
+ const transit=(d.transit||(p.station?p.station+'駅':''))+(p.station||d.transit?(p.walk?'　徒歩'+esc(p.walk)+'分':''):'');
+ const ok=!!(iss.company||iss.name);
+ const tr=(k,v,b)=>`<tr><th>${k}</th><td class="n">${b?`<b>${v}</b>`:v}</td></tr>`;
+ const rates=[D.rate,D.rate+0.5,D.rate+1,D.rate+2],vacs=[...new Set([0,D.vac,10,20,30])].sort((a,b)=>a-b);
+ const yrsSel=[...new Set([1,3,5,10,15,20,25,30].filter(y=>y<M.hold).concat([M.hold]))].slice(-6);
+ // 所見
+ const it=[];const add=(l,t)=>it.push([l,t]);
+ if(isFinite(M.dscr))add(M.dscr>=1.3?'良好':M.dscr>=1.1?'確認':'注意',`返済余裕度(DSCR) ${M.dscr.toFixed(2)}（目安 1.3以上）`);
+ if(isFinite(M.ber))add(M.ber<=0.8?'良好':M.ber<=0.9?'確認':'注意',`損益分岐入居率 ${pct(M.ber)}（目安 80%以下）`);
+ if(M.cf<0)add('注意',`税引前キャッシュフローが赤字です（年 ${yenN(M.cf)}）`);
+ const sc1=annualCF(D,D.vac,D.rate+1),sc2=annualCF(D,20,D.rate);
+ if(M.cf>=0&&sc1<0)add('注意',`金利が1%上昇するとキャッシュフローが赤字化します（年 ${yenN(sc1)}）`);
+ if(M.cf>=0&&sc2<0)add('確認',`空室率20%でキャッシュフローが赤字化します（年 ${yenN(sc2)}）`);
+ if(L){if(L.loan===0)add('注意','法定耐用年数を超過した建物です。融資期間は金融機関の個別判断になります');else if(M.yL>L.loan)add('注意',`融資期間${M.yL}年が、残存法定耐用年数(約${L.loan}年)を超えています。期間短縮・金利上乗せの可能性があります`)}
+ const lastR=M.rows[M.rows.length-1];
+ if(lastR.sale<lastR.bal)add('注意',`${M.hold}年後の想定売却価格が借入残高を下回ります（出口リスク）`);
+ if(isFinite(M.ccr)&&M.cf>=0&&M.ccr<0.03)add('確認',`自己資金利回り(CCR) ${pct(M.ccr)}（目安 3%以上）`);
+ if(!it.some(x=>x[0]!=='良好'))add('良好','指標面で突出した懸念は検出されません');
+ return `<div class="hd"><div class="l">${iss.company?`<span class="co">${esc(iss.company)}</span><span class="vbar"></span>`:''}<h1>投 資 分 析 書</h1></div><div class="r">${esc(no)}<small>作成日：${ymd()}</small></div></div>
+ <div class="grp">${'<table class="r"><tr><th>物件名</th><td colspan="3"><b style="font-size:12pt">'+esc(p.name)+'</b></td></tr></table>'}
+ <table class="r"><tr><th>所在地</th><td>${esc(p.address)}</td><th>地番</th><td>${esc(lot)}</td></tr></table>
+ <table class="r"><tr><th>交通</th><td colspan="3">${transit||'&nbsp;'}</td></tr></table></div>
+ <div class="pricebox"><div class="k">購入価格</div><div class="v"><div class="big">${p.price>0?p.price.toLocaleString('ja-JP'):'-'}<small>円</small>${jpMoney(p.price)?`<i>（${jpMoney(p.price)}）</i>`:''}</div>
+ <div class="sub">${d.occupancy?`<span class="badge">${esc(d.occupancy)}</span>`:''}表面利回り ${pct(M.gross)}　｜　実質利回り ${pct(M.cap)}　｜　年間CF ${yenN(M.cf)}　｜　IRR(${M.hold}年) ${isFinite(M.irr)?pct(M.irr):'-'}</div></div></div>
+ <div class="cols2"><div><div class="band">購入条件・資金計画</div><table class="k">
+ ${tr('購入価格',yenN(M.price))}${tr('購入諸費用（'+D.cost+'%）',yenN(M.cost))}${tr('総投資額',yenN(M.total),1)}${tr('借入額（LTV '+pct(M.ltv)+'）',yenN(M.loan))}${tr('自己資金（頭金+諸費用）',yenN(M.equity),1)}
+ ${tr('金利・返済期間','年'+D.rate+'% ／ '+M.yL+'年（元利均等）')}${tr('月々の返済額',yenN(M.mp))}</table></div>
+ <div><div class="band">年間収支（安定時）</div><table class="k">
+ ${tr('満室想定賃料（年）',yenN(M.gpi))}${tr('空室損失（'+D.vac+'%）',yenN(-M.vloss))}${tr('管理費・修繕積立金等',yenN(-D.mgmt*12))}${tr('固定資産税等',yenN(-D.tax))}${tr('その他経費',yenN(-D.other))}
+ ${tr('NOI（営業純収益）',yenN(M.noi),1)}${tr('年間ローン返済',yenN(-M.ds))}${tr('税引前キャッシュフロー（年／月）',yenN(M.cf)+' ／ '+yenN(M.cf/12),1)}</table></div></div>
+ <div class="band">投　資　指　標</div><div class="grp"><table class="r"><tr><th>表面利回り</th><td>${pct(M.gross)}</td><th>実質利回り</th><td>${pct(M.cap)}</td><th>自己資金利回り</th><td>${pct(M.ccr)}</td><th>IRR（${M.hold}年）</th><td>${isFinite(M.irr)?pct(M.irr):'-'}</td></tr></table>
+ <table class="r"><tr><th>DSCR</th><td>${isFinite(M.dscr)?M.dscr.toFixed(2):'-'}</td><th>損益分岐入居率</th><td>${pct(M.ber)}</td><th>返済比率</th><td>${pct(M.adsr)}</td><th>自己資金回収</th><td>${isFinite(M.payback)?M.payback.toFixed(1)+'年':'-'}</td></tr></table></div>
+ <div class="cols2"><div><div class="band">保有期間シミュレーション（${M.hold}年）</div><div class="chart">${toshiChart(M)}</div></div>
+ <div><div class="band">年次の推移（売却した場合）</div><table class="k t5"><tr><th>経過年</th><th>累計CF</th><th>借入残高</th><th>想定売却価格</th><th>最終手残り</th></tr>
+ ${yrsSel.map(y=>{const q=M.rows[y-1];return `<tr><td class="c">${y}年</td><td class="n">${manY(q.cum)}</td><td class="n">${manY(q.bal)}</td><td class="n">${manY(q.sale)}</td><td class="n"><b>${manY(q.total)}</b></td></tr>`}).join('')}</table>
+ <p class="mut sm">前提：価格変動 年${D.growth}%、売却費用${SELL_COST*100}%、譲渡益への税率${D.tax2}%（取得費＝購入価格+諸費用）。最終手残り＝累計CF（自己資金控除後）＋売却手取り。</p></div></div>
+ <div class="cols2"><div><div class="band">感応度分析（年間CF・単位：万円）</div><table class="k t5"><tr><th>空室率＼金利</th>${rates.map(x=>`<th>${+x.toFixed(2)}%</th>`).join('')}</tr>
+ ${vacs.map(v=>`<tr><td class="c"><b>${v}%</b></td>${rates.map((x,i)=>{const c=annualCF(D,v,x);return `<td class="n${c<0?' neg':''}${v===D.vac&&i===0?' base':''}">${manY(c).replace('万','')}</td>`}).join('')}</tr>`).join('')}</table>
+ <p class="mut sm">▲はマイナス。空室率${D.vac}%・金利${D.rate}%が現在の前提です。</p></div>
+ <div><div class="band">所　　見（自動判定）</div><div class="tokki obs">${it.map(([l,t])=>`<p><span class="tag">${l}</span> ${esc(t)}</p>`).join('')}</div></div></div>
+ <div class="notes">※本書は入力された前提にもとづく概算の試算で、将来の収益を保証するものではありません。所得税・住民税・減価償却・大規模修繕費・金利変動・賃料下落は含みません。実質利回りは空室率を考慮したNOIを総投資額で割った値で、物件概要書（満室想定）とは数値が異なります。目安の水準は一般的なもので、立地・築年・融資条件により異なります。</div>
+ <div class="ft"><div>${ok?`<b>${esc(iss.company||'')}</b>${iss.role?`　｜　${esc(iss.role)}`:''}<br>${[iss.name,iss.tel?'Tel：'+esc(iss.tel):'',iss.email?'Email：'+esc(iss.email):''].filter(Boolean).join('　｜　')}`:''}</div>
+ <div class="n">※本資料は参考情報です。投資判断は、融資条件・税務・賃貸需要等を専門家にご確認のうえ、ご自身の責任で行ってください。</div></div>`}
 
 function docTouki(p){
  ensure(p);const r=p.reg,A=analyze(p),V2=verdict(A),isL=p.type==='土地';
@@ -672,7 +764,7 @@ function docTab(){
  const tbl=(list,cols)=>`<div class="scroll"><table class="tbl-in"><tr>${cols.map(c=>`<th>${c[1]}</th>`).join('')}<th>抹消済</th><th></th></tr>${r[list].map((e,i)=>`<tr>${cols.map(c=>`<td>${c[2]==='select'?`<select data-list="${list}" data-i="${i}" data-f="${c[0]}" style="width:${c[3]}px">${c[4].map(o=>`<option value="${o}" ${(e[c[0]]||'')===o?'selected':''}>${o||'共通(一体)'}</option>`).join('')}</select>`:`<input data-list="${list}" data-i="${i}" data-f="${c[0]}" type="${c[2]}" value="${esc(e[c[0]])}" style="width:${c[3]}px">`}</td>`).join('')}<td><input type="checkbox" data-list="${list}" data-i="${i}" data-f="cleared" ${e.cleared?'checked':''}></td><td><button class="btn dng" data-del="${list}:${i}" style="padding:2px 8px">×</button></td></tr>`).join('')}</table></div><button class="btn" data-add="${list}" style="margin-top:6px">＋ 行を追加</button>`;
  const sec=(id,title,body)=>`<details class="card noprint" data-sec="${id}" ${openSec[id]?'open':''}><summary>${title}</summary>${body}</details>`;
  V(`<div class="card noprint"><div class="row"><label>物件<select id="dp">${S.props.map(x=>`<option value="${x.id}" ${x.id===docId?'selected':''}>${esc(x.name)}</option>`).join('')}</select></label>
- <div class="fit"><div class="seg"><button data-kind="gaiyo" class="${docKind==='gaiyo'?'on':''}">物件概要書</button><button data-kind="touki" class="${docKind==='touki'?'on':''}">登記分析書</button></div></div>
+ <div class="fit"><div class="seg"><button data-kind="gaiyo" class="${docKind==='gaiyo'?'on':''}">物件概要書</button><button data-kind="toshi" class="${docKind==='toshi'?'on':''}">投資分析書</button><button data-kind="touki" class="${docKind==='touki'?'on':''}">登記分析書</button></div></div>
  <button class="btn pri fit" id="pr">印刷 / PDF保存</button><button class="btn fit" id="dh">HTML保存</button></div>
  <p class="note" style="margin:8px 0 0">下の入力欄を埋めると、書類と分析がその場で更新されます。入力内容はこのブラウザに自動保存されます。</p></div>
  ${sec('det','概要書の詳細(土地・建物・法令・取引条件)',`<div class="form">${tx('det.docNo','管理番号(空欄で自動)')}${tx('det.transit','交通(沿線・駅名。例:東京メトロ日比谷線「六本木」駅)')}${sel('det.dealType','取引態様',['売主','代理','媒介(仲介)'])}${tx('det.seller','売主(登記名義人と照合)')}${sel('det.occupancy','現況',['満室稼働中','一部空室','賃貸中(オーナーチェンジ)','空家','居住中','更地','建築中'])}${tx('det.delivery','引渡時期')}
@@ -681,6 +773,7 @@ function docTab(){
  ${tx('det.roadWidth','前面道路幅員(m)','number','step="0.1"')}${tx('det.frontage','接道長さ(m)','number','step="0.1"')}${tx('det.siteArea','敷地面積(㎡)','number','step="0.01"')}${tx('det.footprint','建築面積(㎡)','number','step="0.01"')}
  ${tx('det.totalFloor','延床面積(㎡)','number','step="0.01"')}${tx('det.stories','階数・所在階')}${tx('det.floorsAbove','地上階数','number')}${tx('det.floorsBelow','地下階数','number')}${tx('det.roof','屋根形状(陸屋根など)')}${tx('det.units','総戸数・区画(例:5区画)')}${sel('det.elevator','EV',['有','無','要確認'])}${sel('det.inspection','検査済証',['有','無','不明'])}${tx('det.heightDistrict','高度地区')}${tx('det.currentRent','現況賃料(円/月)','number')}${tx('det.occupancyRate','稼働率(%)','number')}${tx('det.costRate','購入諸費用率(%・実質利回りの計算用。空欄は7%)','number','step="0.1"')}${sel('det.mgmtForm','管理形態',['自主管理','全部委託','一部委託','なし'])}${tx('det.manager','管理会社')}${tx('det.parking','駐車場')}${tx('det.school','周辺環境・学区')}
  ${ta('det.equip','設備・仕様')}${ta('det.special','特記事項')}</div>`)}
+ ${sec('inv','投資分析の前提(投資分析書・購入条件)',`<div class="form">${tx('inv.down','頭金(%)','number','step="1"')}${tx('inv.rate','金利(年・%)','number','step="0.05"')}${tx('inv.years','返済期間(年)','number')}${tx('inv.vac','空室率(%)','number','step="0.5"')}${tx('inv.cost','購入諸費用(%)','number','step="0.5"')}${tx('inv.other','その他経費(円/年)','number','step="1000"')}${tx('inv.hold','保有期間(年)','number')}${tx('inv.growth','価格変動(年・%)','number','step="0.5"')}${tx('inv.tax2','売却益への税率(%)','number')}</div><p class="note">購入価格・満室家賃・管理費・固定資産税は物件の登録内容を使います。</p>`)}
  ${sec('iss','発行者情報(概要書の見出しと下部に表示)',`<div class="form">${gx('issuer.company','会社名・屋号')}${gx('issuer.role','肩書(例:Expert Agent)')}${gx('issuer.name','担当者名')}${gx('issuer.tel','電話')}${gx('issuer.email','メール')}</div><p class="note">入力した内容は全物件の概要書に共通で表示されます。</p>`)}
  ${sec('hyo','登記:表題部・取得日',`<div class="form">${tx('reg.acquired','登記情報の取得日','date')}<span></span>${tx('reg.land.place','土地の所在')}${tx('reg.land.lot','地番')}${sel('reg.land.category','地目',['宅地','田','畑','山林','原野','雑種地','公衆用道路','その他'])}${tx('reg.land.area','地積(㎡)','number','step="0.01"')}
  ${tx('reg.bldg.place','建物の所在')}${tx('reg.bldg.no','家屋番号')}${tx('reg.bldg.kind','種類(居宅・共同住宅など)')}${sel('reg.bldg.struct','構造',STRUCTS.concat('その他'))}${tx('reg.bldg.floorArea','床面積(㎡)','number','step="0.01"')}${tx('reg.bldg.built','新築年月日','date')}
@@ -692,7 +785,7 @@ function docTab(){
  ${sec('kou','登記:甲区(所有権に関する事項)',tbl('kou',KOU_COLS))}
  ${sec('otsu','登記:乙区(抵当権など)',tbl('otsu',OTSU_COLS))}
  <div id="doc" class="doc sheet"></div>`);
- const pv=()=>{const q=byId(docId);$('#doc').className=docKind==='gaiyo'?'doc sheet':'doc touki';$('#doc').innerHTML=docKind==='gaiyo'?docGaiyo(q):docTouki(q)};pv();
+ const pv=()=>{const q=byId(docId);$('#doc').className=docKind==='touki'?'doc touki':'doc sheet';$('#doc').innerHTML=docKind==='gaiyo'?docGaiyo(q):docKind==='toshi'?docToshi(q):docTouki(q)};pv();
  const v=$('#view');
  v.addEventListener('toggle',e=>{if(e.target.dataset?.sec)openSec[e.target.dataset.sec]=e.target.open},true);
  const h=e=>{const t=e.target,q=byId(docId);if(!q)return;
@@ -711,7 +804,7 @@ function docTab(){
   else if(b.dataset.pmain){const [x]=q.photos.splice(+b.dataset.pmain,1);q.photos.unshift(x);save();openSec.map=true;docTab()}
   else if(b.dataset.del){const [l,i]=b.dataset.del.split(':');q.reg[l].splice(+i,1);save();openSec[l]=true;docTab()}
   else if(b.id==='pr')window.print();
-  else if(b.id==='dh'){const n=(docKind==='gaiyo'?'物件概要書_':'登記分析書_')+q.name;download(n+'.html',`<!doctype html><html lang="ja"><meta charset="utf-8"><title>${esc(n)}</title><style>body{margin:20px;font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}${DOC_CSS}${st.textContent}</style><body>${$('#doc').outerHTML}</body></html>`,'text/html')}};
+  else if(b.id==='dh'){const n=({gaiyo:'物件概要書_',toshi:'投資分析書_',touki:'登記分析書_'})[docKind]+q.name;download(n+'.html',`<!doctype html><html lang="ja"><meta charset="utf-8"><title>${esc(n)}</title><style>body{margin:20px;font-family:system-ui,"Hiragino Sans","Noto Sans JP",sans-serif}${DOC_CSS}${st.textContent}</style><body>${$('#doc').outerHTML}</body></html>`,'text/html')}};
 }
 
 /* ---------- データ ---------- */

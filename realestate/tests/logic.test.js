@@ -57,6 +57,17 @@ const near=(a,b,tol,msg)=>assert.ok(Math.abs(a-b)<=tol,`${msg}: ${a} vs ${b}`);
   const order=['物 件 概 要 書','>価格<','土　　地','建　　物','収　益　情　報','法　規　制','特　記　事　項','地　図'];let at=-1;
   for(const k of order){const i=h.indexOf(k,at+1);assert.ok(i>at,'見出し順: '+k);at=i}});
  await t('概要書:発行者情報を空にすると見出し・フッターに会社名が出ない',async()=>{const h=await ev(()=>{S.issuer={};return docGaiyo(ensure(S.props[0]))});assert.ok(!/class="co"/.test(h))});
+ await t('IRR(既知値)と投資モデルの整合',async()=>{
+  near(await ev(()=>irr([-100,110])),0.10,1e-9,'irr1');near(await ev(()=>irr([-100,0,121])),0.10,1e-9,'irr2');assert.ok(Number.isNaN(await ev(()=>irr([100,10]))));
+  const D={price:1.2e8,rent:8.5e5,mgmt:0,tax:6.8e5,other:6e5,vac:5,cost:7,down:30,rate:2.2,years:25,hold:10,growth:-1,tax2:20};
+  const m=await ev(D=>{const M=invModel(D);return {cf:M.cf,noi:M.noi,eq:M.equity,loan:M.loan,ds:M.ds,last:M.rows[9],ber:M.ber,dscr:M.dscr}},D);
+  const gpi=8.5e5*12,noi=gpi*0.95-(6.8e5+6e5),loan=1.2e8*0.7,r=0.022/12,mp=loan*r/(1-Math.pow(1+r,-300));
+  near(m.noi,noi,0.01,'noi');near(m.ds,mp*12,0.01,'ds');near(m.cf,noi-mp*12,0.01,'cf');near(m.eq,1.2e8*0.3+1.2e8*0.07,0.01,'equity');
+  const bal=loan*Math.pow(1+r,120)-mp*(Math.pow(1+r,120)-1)/r,sale=1.2e8*Math.pow(0.99,10),net=sale-bal-sale*0.03-Math.max(0,sale-sale*0.03-1.2e8*1.07)*0.2;
+  near(m.last.bal,bal,0.5,'bal');near(m.last.net,net,0.5,'net');near(m.last.total,10*(noi-mp*12)-m.eq+net,0.5,'total');near(m.ber,(6.8e5+6e5+mp*12)/gpi,1e-9,'ber');near(m.dscr,noi/(mp*12),1e-9,'dscr');
+  near(await ev(D=>annualCF(D,5,2.2),D),noi-mp*12,0.01,'sens base')});
+ await t('投資分析書:極端な前提でも崩れない/所見が出る',async()=>{const h=await ev(()=>{const p=ensure(JSON.parse(JSON.stringify(S.props.find(x=>x.type==='ビル・店舗'))));p.inv.down='0';p.inv.rate='6';p.inv.vac='40';p.inv.years='0';p.inv.hold='60';return docToshi(p)});
+  assert.ok(!/NaN|Infinity|undefined/.test(h));assert.ok(h.includes('赤字'))});
  await t('全タブがエラーなく描画できる',async()=>{for(const k of ['dash','list','pipe','cmp','sim','doc','data']){await ev(k=>{tab=k;render()},k)}assert.deepStrictEqual(errs,[])});
  await t('概要書・登記分析書のHTMLに未エスケープの入力が入らない',async()=>{const h=await ev(()=>{const p=ensure(S.props[0]);p.name='<img src=x onerror=alert(1)>';p.reg.kou[0].holder='<script>1</script>';return docGaiyo(p)+docTouki(p)});assert.ok(!/<img src=x|<script>1/.test(h))});
  console.log(`\n${n} tests run`);await b.close();
