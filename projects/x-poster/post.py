@@ -93,6 +93,7 @@ def main(argv):
     else:
         ap.error("text か --queue が必要です")
 
+    text = text.replace("\\n", "\n")  # キューの \n を改行に変える
     n = weighted_len(text)
     print(f"[{n}/{MAX_LEN}] {text}")
     if n > MAX_LEN:
