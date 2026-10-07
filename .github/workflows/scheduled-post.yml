@@ -2,7 +2,8 @@ name: scheduled-post
 
 on:
   schedule:
-    - cron: "0 0 * * *"   # 毎日 09:00 JST (UTC 00:00)
+    - cron: "7 0 * * *"   # 毎日 朝 09:07 JST (UTC 00:07)
+    - cron: "7 12 * * *"  # 毎日 夜 21:07 JST (UTC 12:07)
   workflow_dispatch:
     inputs:
       send:
