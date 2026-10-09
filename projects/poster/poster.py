@@ -65,7 +65,7 @@ def run_targets(names, text, send, use_queue, skip_unset):
     for name in names:
         try:
             post_one(name, text, send, postqueue.path_for(name) if use_queue else None, skip_unset)
-        except PostError as e:
+        except Exception as e:  # 想定外の失敗でも、残りの宛先は続ける
             print(f"[{name}] エラー: {e}")
             failed = True
     return 1 if failed else 0
@@ -106,7 +106,7 @@ def main(argv):
     if a.cmd == "ad":
         try:
             ad.run(a.send, a.threads, a.day, a.force)
-        except PostError as e:
+        except Exception as e:
             print(f"エラー: {e}")
             return 1
         return 0

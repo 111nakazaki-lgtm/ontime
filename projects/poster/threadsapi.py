@@ -26,7 +26,7 @@ def read_env() -> dict:
 def call(path: str, params: dict) -> dict:
     req = urllib.request.Request(
         f"{BASE}/{path}", data=urllib.parse.urlencode(params).encode(), method="POST")
-    return http(req, "Threads API", timeout=30)
+    return http(req, "Threads API")
 
 
 def send(text: str, env: dict, image_url: str = None) -> str:

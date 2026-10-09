@@ -84,7 +84,7 @@ class PostTest(unittest.TestCase):
         def fake(name, *a, **k):
             calls.append(name)
             if name == "x":
-                raise PostError("x down")
+                raise OSError("x down")
         with mock.patch.object(poster, "post_one", side_effect=fake), \
                 contextlib.redirect_stdout(io.StringIO()) as out:
             rc = poster.run_targets(["x", "threads"], None, True, True, True)

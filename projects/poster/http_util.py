@@ -13,6 +13,8 @@ def http(req, label, timeout=60):
             return json.load(r)
     except urllib.error.HTTPError as e:
         raise PostError(f"{label} エラー {e.code}: {e.read().decode(errors='replace')}")
+    except (OSError, ValueError) as e:  # 回線断・タイムアウト・不正な応答
+        raise PostError(f"{label} エラー: {type(e).__name__}: {e}")
 
 
 def multipart(fields, file_field, filename, data, ctype):

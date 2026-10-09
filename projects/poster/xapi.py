@@ -63,7 +63,7 @@ def send(text: str, env: dict, image: str = None) -> str:
     req = urllib.request.Request(
         URL, data=json.dumps(body).encode(), method="POST",
         headers={"Authorization": oauth_header("POST", URL, env), "Content-Type": "application/json"})
-    return http(req, "X API", timeout=30).get("data", {}).get("id")
+    return http(req, "X API").get("data", {}).get("id")
 
 
 def upload(path: str, env: dict) -> str:
