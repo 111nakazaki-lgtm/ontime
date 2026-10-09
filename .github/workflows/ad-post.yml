@@ -1,0 +1,78 @@
+name: ad-post
+
+# ドローン空撮の広告(画像つき)を、毎日1回、ランダムに1枚選んで投稿する。
+# 期間は projects/ad-poster/ads.json の start_date から days 日(約1か月)。過ぎたら何もしない。
+on:
+  schedule:
+    - cron: "37 3 * * *"   # 毎日 12:37 JST (UTC 03:37)
+  workflow_dispatch:
+    inputs:
+      send:
+        description: "実際に投稿する (false なら確認のみ)"
+        type: boolean
+        default: false
+      threads:
+        description: "Threads にも投稿する"
+        type: boolean
+        default: false
+      day:
+        description: "n日目として動かす(試し用。空なら今日)"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  issues: write     # 結果を Issue にコメントして通知するため
+
+concurrency:
+  group: ad-post
+  cancel-in-progress: false
+
+jobs:
+  ad:
+    runs-on: ubuntu-latest
+    env:
+      SEND: ${{ github.event_name == 'schedule' || inputs.send }}
+      THREADS: ${{ inputs.threads == true }}
+      DAY: ${{ inputs.day }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post ad
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+        run: |
+          set -o pipefail
+          args=""
+          [ "$SEND" = "true" ] && args="$args --send"
+          [ "$THREADS" = "true" ] && args="$args --threads"
+          if [ -n "$DAY" ]; then args="$args --day $DAY --force"; fi
+          python3 projects/ad-poster/post_ad.py $args 2>&1 | tee /tmp/ad.log
+
+      - name: Notify result
+        if: ${{ !cancelled() && env.SEND == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          f=/tmp/ad.log
+          if [ ! -s "$f" ]; then r="⚠️ 記録なし(実行されませんでした)"
+          elif grep -q "期間外" "$f"; then r="⚪ 期間外(投稿なし)"
+          elif grep -q "投稿しました" "$f"; then r="✅ 投稿しました — $(head -1 "$f")"
+          else r="❌ 失敗 — $(grep -m1 'エラー' "$f" || tail -n 1 "$f")"; fi
+          body="@${OWNER} 広告投稿の結果です($(TZ=Asia/Tokyo date '+%m/%d %H:%M') JST)
+
+          - 広告: $r
+
+          詳細: ${RUN_URL}"
+          num=$(gh issue list --state open --search '投稿ログ in:title' --json number --jq '.[0].number // empty')
+          if [ -z "$num" ]; then
+            num=$(gh issue create --title "投稿ログ" --body "定期投稿の結果を、ここにコメントで残します。" | grep -o '[0-9]*$')
+          fi
+          gh issue comment "$num" --body "$body"
