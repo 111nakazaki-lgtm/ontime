@@ -1,0 +1,90 @@
+name: post
+
+# 投稿をひとつにまとめた定期実行。ツール本体は projects/poster/(使い方は README.md)。
+#   queue: 毎日 09:07 / 21:07 JST に、X と Threads のキューの先頭1行を投稿して消す
+#   ad   : 毎日 12:37 JST に、ドローン空撮の広告(画像つき)を1枚、ランダムに投稿する。
+#          期間は projects/poster/ads.json の start_date から days 日。過ぎたら何もしない。
+on:
+  schedule:
+    - cron: "7 0 * * *"    # 09:07 JST (UTC 00:07)  → queue
+    - cron: "7 12 * * *"   # 21:07 JST (UTC 12:07)  → queue
+    - cron: "37 3 * * *"   # 12:37 JST (UTC 03:37)  → ad
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "何を投稿するか"
+        type: choice
+        options: [queue, ad]
+        default: queue
+      send:
+        description: "実際に投稿する (false なら確認のみ)"
+        type: boolean
+        default: false
+      threads:
+        description: "[ad] Threads にも投稿する"
+        type: boolean
+        default: false
+      day:
+        description: "[ad] n日目として動かす(試し用。空なら今日)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write   # 投稿したキューの行を消してコミットするため
+  issues: write     # 結果を Issue にコメントして通知するため
+
+concurrency:
+  group: post
+  cancel-in-progress: false
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    env:
+      MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || (github.event.schedule == '37 3 * * *' && 'ad' || 'queue') }}
+      # 定期実行(schedule)では常に投稿。手動実行では入力の値に従う
+      SEND: ${{ github.event_name == 'schedule' || inputs.send }}
+      THREADS: ${{ inputs.threads == true }}
+      DAY: ${{ inputs.day }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Post
+        env:
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          THREADS_ACCESS_TOKEN: ${{ secrets.THREADS_ACCESS_TOKEN }}
+          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+        run: |
+          set -o pipefail
+          args=""
+          [ "$SEND" = "true" ] && args="$args --send"
+          if [ "$MODE" = "ad" ]; then
+            [ "$THREADS" = "true" ] && args="$args --threads"
+            [ -n "$DAY" ] && args="$args --day $DAY --force"
+            python3 projects/poster/poster.py ad $args 2>&1 | tee /tmp/post.log
+          else
+            # X が失敗しても Threads は投稿する。シークレット未設定の宛先はスキップ
+            python3 projects/poster/poster.py queue --skip-unset $args 2>&1 | tee /tmp/post.log
+          fi
+
+      - name: Commit updated queues
+        if: ${{ !cancelled() && env.SEND == 'true' && env.MODE == 'queue' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add projects/poster/queues
+          git diff --cached --quiet && exit 0
+          git commit -m "Update post queues after scheduled post"
+          git pull --rebase
+          git push
+
+      - name: Notify result
+        if: ${{ !cancelled() && env.SEND == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OWNER: ${{ github.repository_owner }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash projects/poster/notify.sh "$MODE" /tmp/post.log
