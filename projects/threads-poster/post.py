@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -22,7 +23,7 @@ MAX_LEN = 500
 KEYS = ["THREADS_ACCESS_TOKEN"]
 
 
-def call(path: str, params: dict) -> dict:
+def call(path: str, params: dict, retries: int = 0) -> dict:
     req = urllib.request.Request(
         f"{BASE}/{path}", data=urllib.parse.urlencode(params).encode(), method="POST"
     )
@@ -30,6 +31,9 @@ def call(path: str, params: dict) -> dict:
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.load(r)
     except urllib.error.HTTPError as e:
+        if retries > 0 and e.code in (400, 500, 502, 503):
+            time.sleep(10)  # 下書きがMeta側に反映されるのを待って、やり直す
+            return call(path, params, retries - 1)
         sys.exit(f"Threads API エラー {e.code}: {e.read().decode(errors='replace')}")
 
 
@@ -37,7 +41,12 @@ def send(text: str, env: dict) -> str:
     uid, token = env["THREADS_USER_ID"] or "me", env["THREADS_ACCESS_TOKEN"]
     # 1) 投稿の下書き(コンテナ)を作る  2) 公開する
     created = call(f"{uid}/threads", {"media_type": "TEXT", "text": text, "access_token": token})
-    done = call(f"{uid}/threads_publish", {"creation_id": created["id"], "access_token": token})
+    time.sleep(10)  # 下書きがMeta側に反映されるまで待つ(すぐ公開すると Media Not Found になることがある)
+    done = call(
+        f"{uid}/threads_publish",
+        {"creation_id": created["id"], "access_token": token},
+        retries=3,
+    )
     return done.get("id", "")
 
 
