@@ -13,12 +13,10 @@
 import argparse
 import datetime as dt
 import json
-import mimetypes
 import os
 import random
 import sys
 import time
-import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -29,8 +27,6 @@ import post as xpost  # noqa: E402  (X の署名・文字数の数え方を使�
 
 JST = dt.timezone(dt.timedelta(hours=9))
 X_TWEET = "https://api.x.com/2/tweets"
-X_MEDIA_V2 = "https://api.x.com/2/media/upload"
-X_MEDIA_V1 = "https://upload.twitter.com/1.1/media/upload.json"
 THREADS = "https://graph.threads.net/v1.0"
 RAW = "https://raw.githubusercontent.com/{repo}/{branch}/projects/ad-poster/images/{name}"
 
@@ -60,18 +56,6 @@ def pick(n, count, seed=20261010):
     return o[pos]
 
 
-def multipart(fields, file_field, filename, data, ctype):
-    boundary = "----ad" + uuid.uuid4().hex
-    parts = []
-    for k, v in fields.items():
-        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
-    parts.append(
-        (f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
-         f"Content-Type: {ctype}\r\n\r\n").encode() + data + b"\r\n")
-    parts.append(f"--{boundary}--\r\n".encode())
-    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
-
-
 def http(req, label):
     try:
         with urllib.request.urlopen(req, timeout=60) as r:
@@ -80,28 +64,7 @@ def http(req, label):
         sys.exit(f"{label} エラー {e.code}: {e.read().decode(errors='replace')}")
 
 
-def x_upload(path, env):
-    name = os.path.basename(path)
-    ctype = mimetypes.guess_type(name)[0] or "image/jpeg"
-    data = open(path, "rb").read()
-    body, ct = multipart({"media_category": "tweet_image", "media_type": ctype}, "media", name, data, ctype)
-    req = urllib.request.Request(
-        X_MEDIA_V2, data=body, method="POST",
-        headers={"Authorization": xpost.oauth_header("POST", X_MEDIA_V2, env), "Content-Type": ct})
-    try:
-        with urllib.request.urlopen(req, timeout=60) as r:
-            j = json.load(r)
-    except urllib.error.HTTPError as e:
-        if e.code not in (404, 410):
-            sys.exit(f"X 画像アップロード エラー {e.code}: {e.read().decode(errors='replace')}")
-        # v2 が使えない場合は、旧い方法(v1.1)を試す
-        body, ct = multipart({"media_category": "tweet_image"}, "media", name, data, ctype)
-        req = urllib.request.Request(
-            X_MEDIA_V1, data=body, method="POST",
-            headers={"Authorization": xpost.oauth_header("POST", X_MEDIA_V1, env), "Content-Type": ct})
-        j = http(req, "X 画像アップロード(v1.1)")
-        return str(j["media_id_string"])
-    return str(j.get("data", {}).get("id") or j.get("media_id_string"))
+x_upload = xpost.x_upload  # 画像のアップロードは x-poster と共通
 
 
 def x_post(text, media_id, env):

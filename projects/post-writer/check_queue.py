@@ -14,6 +14,11 @@ for name, (path, limit, measure) in QUEUES.items():
     lines = [l.rstrip("\n") for l in path.open(encoding="utf-8")]
     posts = [l for l in lines if l.strip() and not l.startswith("#")]
     for l in posts:
+        l, _, imgs = l.partition(" || ")  # 写真つきの行は、文章の部分だけ数える
+        for img in filter(None, (i.strip() for i in imgs.split(","))):
+            if not (path.parent / "images" / img).exists():
+                bad += 1
+                print(f"[{name}] 写真がない: {img}")
         n = measure(l.replace("\\n", "\n"))
         if n > limit:
             bad += 1
