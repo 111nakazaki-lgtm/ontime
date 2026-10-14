@@ -5,6 +5,9 @@
   python post.py "投稿する文章" --send     # 実際に投稿
   python post.py --queue queue.txt --send  # キューの先頭1行を投稿して消す
 
+キューの行に写真をつけるときは、文章のあとに「 || 写真のファイル名」を書く(images/ の中のファイル。
+カンマで区切ると最大4枚)。例:  神戸に行ってきた。 || kobe-01-be-kobe.jpg
+
 認証情報は環境変数から読む(リポジトリには入れない):
   X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_SECRET
 """
@@ -13,6 +16,7 @@ import base64
 import hashlib
 import hmac
 import json
+import mimetypes
 import os
 import secrets
 import sys
@@ -20,9 +24,14 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 URL = "https://api.x.com/2/tweets"
+MEDIA_V2 = "https://api.x.com/2/media/upload"
+MEDIA_V1 = "https://upload.twitter.com/1.1/media/upload.json"
 MAX_LEN = 280
+MAX_IMAGES = 4
+IMAGE_SEP = " || "
 KEYS = ["X_API_KEY", "X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_SECRET"]
 
 
@@ -52,10 +61,57 @@ def oauth_header(method: str, url: str, env: dict, nonce=None, ts=None) -> str:
     return "OAuth " + ", ".join(f'{quote(k)}="{quote(v)}"' for k, v in sorted(params.items()))
 
 
-def send(text: str, env: dict) -> dict:
+def multipart(fields, file_field, filename, data, ctype):
+    boundary = "----x" + uuid.uuid4().hex
+    parts = []
+    for k, v in fields.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+    parts.append(
+        (f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
+         f"Content-Type: {ctype}\r\n\r\n").encode() + data + b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def http(req, label):
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"{label} エラー {e.code}: {e.read().decode(errors='replace')}")
+
+
+def x_upload(path: str, env: dict) -> str:
+    """画像を X にアップロードして media_id を返す。v2 が使えなければ旧い方法(v1.1)を試す。"""
+    name = os.path.basename(path)
+    ctype = mimetypes.guess_type(name)[0] or "image/jpeg"
+    with open(path, "rb") as f:
+        data = f.read()
+    body, ct = multipart({"media_category": "tweet_image", "media_type": ctype}, "media", name, data, ctype)
+    req = urllib.request.Request(
+        MEDIA_V2, data=body, method="POST",
+        headers={"Authorization": oauth_header("POST", MEDIA_V2, env), "Content-Type": ct})
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            j = json.load(r)
+    except urllib.error.HTTPError as e:
+        if e.code not in (404, 410):
+            sys.exit(f"X 画像アップロード エラー {e.code}: {e.read().decode(errors='replace')}")
+        body, ct = multipart({"media_category": "tweet_image"}, "media", name, data, ctype)
+        req = urllib.request.Request(
+            MEDIA_V1, data=body, method="POST",
+            headers={"Authorization": oauth_header("POST", MEDIA_V1, env), "Content-Type": ct})
+        return str(http(req, "X 画像アップロード(v1.1)")["media_id_string"])
+    return str(j.get("data", {}).get("id") or j.get("media_id_string"))
+
+
+def send(text: str, env: dict, media_ids=None) -> dict:
+    payload = {"text": text}
+    if media_ids:
+        payload["media"] = {"media_ids": list(media_ids)}
     req = urllib.request.Request(
         URL,
-        data=json.dumps({"text": text}).encode(),
+        data=json.dumps(payload).encode(),
         headers={"Authorization": oauth_header("POST", URL, env), "Content-Type": "application/json"},
         method="POST",
     )
@@ -64,6 +120,14 @@ def send(text: str, env: dict) -> dict:
             return json.load(r)
     except urllib.error.HTTPError as e:
         sys.exit(f"X API エラー {e.code}: {e.read().decode(errors='replace')}")
+
+
+def split_images(line: str):
+    """「文章 || a.jpg,b.jpg」を、文章と写真のファイル名の一覧に分ける。"""
+    if IMAGE_SEP not in line:
+        return line, []
+    text, _, names = line.rpartition(IMAGE_SEP)
+    return text, [n.strip() for n in names.split(",") if n.strip()][:MAX_IMAGES]
 
 
 def pop_queue(path: str) -> str:
@@ -93,9 +157,14 @@ def main(argv):
     else:
         ap.error("text か --queue が必要です")
 
+    text, names = split_images(text)
+    base = os.path.dirname(os.path.abspath(a.queue)) if a.queue else os.getcwd()
+    paths = [os.path.join(base, "images", n) for n in names]
     text = text.replace("\\n", "\n")  # キューの \n を改行に変える
     n = weighted_len(text)
     print(f"[{n}/{MAX_LEN}] {text}")
+    if names:
+        print("写真:", ", ".join(names))
     if n > MAX_LEN:
         sys.exit("長すぎます")
     if not a.send:
@@ -106,7 +175,10 @@ def main(argv):
     missing = [k for k in KEYS if not env[k]]
     if missing:
         sys.exit("環境変数が足りません: " + ", ".join(missing))
-    res = send(text, env)
+    found = [p for p in paths if os.path.exists(p)]
+    if len(found) < len(paths):
+        print("⚠ 見つからない写真があるので、見つかった分だけで投稿します")
+    res = send(text, env, [x_upload(p, env) for p in found])
     print("投稿しました:", res.get("data", {}).get("id"))
     if rest is not None:  # 投稿に成功したあとだけキューから消す
         with open(a.queue, "w", encoding="utf-8") as f:
