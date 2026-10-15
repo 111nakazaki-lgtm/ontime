@@ -54,12 +54,24 @@ jobs:
           if [ "$SEND" = "true" ] && [ -z "$THREADS_ACCESS_TOKEN" ]; then echo "Threads のシークレット未設定のためスキップ" | tee /tmp/threads.log; exit 0; fi
           python3 projects/threads-poster/post.py --queue projects/threads-poster/queue.txt $flag 2>&1 | tee /tmp/threads.log
 
+      # 写真が必須。1日1回、夜 21:07 JST の回だけ投稿(手動実行では毎回)。シークレット未登録のあいだはスキップ
+      - name: Post to Instagram
+        if: ${{ !cancelled() && (github.event_name != 'schedule' || github.event.schedule == '7 12 * * *') }}
+        env:
+          INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
+          INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
+        run: |
+          set -o pipefail
+          flag=""; [ "$SEND" = "true" ] && flag="--send"
+          if [ "$SEND" = "true" ] && [ -z "$INSTAGRAM_ACCESS_TOKEN" ]; then echo "Instagram のシークレット未設定のためスキップ" | tee /tmp/instagram.log; exit 0; fi
+          python3 projects/instagram-poster/post.py --queue projects/instagram-poster/queue.txt $flag 2>&1 | tee /tmp/instagram.log
+
       - name: Commit updated queues
         if: ${{ !cancelled() && env.SEND == 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add projects/x-poster/queue.txt projects/threads-poster/queue.txt
+          git add projects/x-poster/queue.txt projects/threads-poster/queue.txt projects/instagram-poster/queue.txt
           git diff --cached --quiet && exit 0
           git commit -m "Update post queues after scheduled post"
           git pull --rebase
@@ -81,10 +93,13 @@ jobs:
             elif grep -q "スキップ" "$f"; then echo "⚪ スキップ(シークレット未設定)"
             else echo "❌ 失敗 — $(grep -m1 'エラー' "$f" || tail -n 1 "$f")"; fi
           }
+          ig=""  # Instagram は1日1回なので、投稿した回だけ載せる
+          [ -e /tmp/instagram.log ] && ig="
+          - Instagram: $(summary /tmp/instagram.log)"
           body="@${OWNER} 定期投稿の結果です($(TZ=Asia/Tokyo date '+%m/%d %H:%M') JST)
 
           - X: $(summary /tmp/x.log)
-          - Threads: $(summary /tmp/threads.log)
+          - Threads: $(summary /tmp/threads.log)${ig}
 
           詳細: ${RUN_URL}"
           num=$(gh issue list --state open --search '投稿ログ in:title' --json number --jq '.[0].number // empty')
