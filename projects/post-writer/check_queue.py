@@ -7,6 +7,7 @@ QUEUES = {
     "x": (ROOT / "projects/x-poster/queue.txt", 280,
           lambda t: sum(1 if ord(c) <= 0x10FF or 0x2000 <= ord(c) <= 0x200D else 2 for c in t)),
     "threads": (ROOT / "projects/threads-poster/queue.txt", 500, len),
+    "instagram": (ROOT / "projects/instagram-poster/queue.txt", 2200, len),
 }
 
 bad = 0
@@ -19,6 +20,9 @@ for name, (path, limit, measure) in QUEUES.items():
             if not (path.parent / "images" / img).exists():
                 bad += 1
                 print(f"[{name}] 写真がない: {img}")
+        if name == "instagram" and not imgs.strip():
+            bad += 1
+            print(f"[{name}] 写真がない(必須): {l[:30]}…")
         n = measure(l.replace("\\n", "\n"))
         if n > limit:
             bad += 1
