@@ -54,9 +54,9 @@ jobs:
           if [ "$SEND" = "true" ] && [ -z "$THREADS_ACCESS_TOKEN" ]; then echo "Threads のシークレット未設定のためスキップ" | tee /tmp/threads.log; exit 0; fi
           python3 projects/threads-poster/post.py --queue projects/threads-poster/queue.txt $flag 2>&1 | tee /tmp/threads.log
 
-      # 写真が必須。シークレット未登録のあいだはスキップ
+      # 写真が必須。1日1回、夜 21:07 JST の回だけ投稿(手動実行では毎回)。シークレット未登録のあいだはスキップ
       - name: Post to Instagram
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && (github.event_name != 'schedule' || github.event.schedule == '7 12 * * *') }}
         env:
           INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
           INSTAGRAM_USER_ID: ${{ secrets.INSTAGRAM_USER_ID }}
