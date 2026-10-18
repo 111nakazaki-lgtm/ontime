@@ -5,6 +5,9 @@
   python post.py "投稿する文章" --send     # 実際に投稿
   python post.py --queue queue.txt --send  # キューの先頭1行を投稿して消す
 
+キューの行に写真をつけるときは、文章のあとに「 || 写真のファイル名」を書く。
+写真は projects/x-poster/images/ にあるものを使う(公開URLで Threads に渡す)。
+
 認証情報は環境変数から読む(リポジトリには入れない):
   THREADS_ACCESS_TOKEN (必須)
   THREADS_USER_ID      (省略可。空なら自分のアカウント "me" に投稿)
@@ -19,6 +22,8 @@ import urllib.parse
 import urllib.request
 
 BASE = "https://graph.threads.net/v1.0"
+RAW = "https://raw.githubusercontent.com/{repo}/{branch}/projects/x-poster/images/{name}"
+IMAGE_SEP = " || "
 MAX_LEN = 500
 KEYS = ["THREADS_ACCESS_TOKEN"]
 
@@ -37,10 +42,27 @@ def call(path: str, params: dict, retries: int = 0) -> dict:
         sys.exit(f"Threads API エラー {e.code}: {e.read().decode(errors='replace')}")
 
 
-def send(text: str, env: dict) -> str:
+def image_url(name: str) -> str:
+    repo = os.environ.get("GITHUB_REPOSITORY", "111nakazaki-lgtm/ontime")
+    branch = os.environ.get("GITHUB_REF_NAME") or os.environ.get("AD_IMAGE_BRANCH") or "claude/integration-mwd91k"
+    return RAW.format(repo=repo, branch=branch, name=urllib.parse.quote(name))
+
+
+def split_image(line: str):
+    """「文章 || a.jpg」を、文章と写真のファイル名に分ける(写真なしなら名前は空)。"""
+    if IMAGE_SEP not in line:
+        return line, ""
+    text, _, name = line.rpartition(IMAGE_SEP)
+    return text, name.strip()
+
+
+def send(text: str, env: dict, image: str = "") -> str:
     uid, token = env["THREADS_USER_ID"] or "me", env["THREADS_ACCESS_TOKEN"]
     # 1) 投稿の下書き(コンテナ)を作る  2) 公開する
-    created = call(f"{uid}/threads", {"media_type": "TEXT", "text": text, "access_token": token})
+    params = {"media_type": "TEXT", "text": text, "access_token": token}
+    if image:
+        params = {"media_type": "IMAGE", "image_url": image_url(image), "text": text, "access_token": token}
+    created = call(f"{uid}/threads", params)
     time.sleep(10)  # 下書きがMeta側に反映されるまで待つ(すぐ公開すると Media Not Found になることがある)
     done = call(
         f"{uid}/threads_publish",
@@ -77,8 +99,16 @@ def main(argv):
     else:
         ap.error("text か --queue が必要です")
 
+    text, image = split_image(text)
     text = text.replace("\\n", "\n")  # キューの \n を改行に変える
     print(f"[{len(text)}/{MAX_LEN}] {text}")
+    if image:
+        here = os.path.dirname(os.path.abspath(__file__))
+        if not os.path.exists(os.path.join(here, "..", "x-poster", "images", image)):
+            print(f"⚠ 写真が見つからないので、文章だけで投稿します: {image}")
+            image = ""
+        else:
+            print("写真:", image)
     if len(text) > MAX_LEN:
         sys.exit("長すぎます")
     if not a.send:
@@ -90,7 +120,7 @@ def main(argv):
     missing = [k for k in KEYS if not env[k]]
     if missing:
         sys.exit("環境変数が足りません: " + ", ".join(missing))
-    print("投稿しました:", send(text, env))
+    print("投稿しました:", send(text, env, image))
     if rest is not None:  # 投稿に成功したあとだけキューから消す
         with open(a.queue, "w", encoding="utf-8") as f:
             f.write("\n".join(rest) + ("\n" if rest else ""))
