@@ -17,7 +17,8 @@ for name, (path, limit, measure) in QUEUES.items():
     for l in posts:
         l, _, imgs = l.partition(" || ")  # 写真つきの行は、文章の部分だけ数える
         for img in filter(None, (i.strip() for i in imgs.split(","))):
-            if not ((path.parent / "images" / img).exists() or (ROOT / "projects/x-poster/images" / img).exists()):
+            folder = "videos" if img.lower().endswith(".mp4") else "images"  # Instagram のリールは videos/
+            if not ((path.parent / folder / img).exists() or (ROOT / "projects/x-poster/images" / img).exists()):
                 bad += 1
                 print(f"[{name}] 写真がない: {img}")
         if name == "instagram" and not imgs.strip():
