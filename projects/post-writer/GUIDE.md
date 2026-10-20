@@ -1,7 +1,7 @@
 # 投稿の自動下書きルール
 
 毎日 Claude がこのルールで投稿を書き、`projects/x-poster/queue.txt` と
-`projects/threads-poster/queue.txt` に足す。投稿は scheduled-post（毎日 07:07 / 12:07 / 18:07 / 21:07 JST、1日4本）が自動で行う。
+`projects/threads-poster/queue.txt` に足す。投稿は scheduled-post（毎日 07:07 / 12:07 / 20:37 / 22:37 JST、1日4本）が自動で行う。
 
 ## 補充のしかた
 - 各キューの投稿（#で始まらない行）が **10本未満** になったら、10本になるまで足す（1日4本消費＝約2.5日分）
