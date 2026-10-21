@@ -42,7 +42,7 @@
 - 不動産・ドローン・AI・日常・家族をバランスよく
 
 ## Instagram（queue: projects/instagram-poster/queue.txt）
-- 1日1本。毎朝 Claude が先頭の1行を Metricool で当日 21:00 JST に予約し、`posted.txt` に移す。キューが **3本未満** なら7本まで足す
+- 1日1本。毎朝 Claude が先頭の1行を Metricool で当日 21:00 JST に予約し、`posted.txt` に移す。キューが **3本未満** なら7本まで足す（10/21に、10/21〜10/25の5本をまとめて予約した。次は 10/26 以降の分から。予約の前に、Metricool の getScheduledPosts で、その日に別の投稿がないか見る）
 - 写真は必須。`projects/instagram-poster/images/` の写真だけを使う（新しい写真が x-poster/images に入ったら `make_images.py` を実行してから使う）
 - ad-poster の写真は「イメージ」で本人の撮影ではないので使わない。本人の写真として出せる写真だけ
 - 本人のドローン動画は、リール（`|| 動画.mp4`、`videos/` に置く）にする。届く人が写真より多い。動画は ffmpeg で H.264・無音の音声トラック付き・メタデータ（位置情報）なしにしてから置く
