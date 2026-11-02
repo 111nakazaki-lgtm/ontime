@@ -2,10 +2,7 @@ name: scheduled-post
 
 on:
   schedule:
-    - cron: "7 22 * * *"  # 毎日 朝 07:07 JST (UTC 22:07 前日)
-    - cron: "7 3 * * *"   # 毎日 昼 12:07 JST (UTC 03:07)
-    - cron: "37 11 * * *" # 毎日 夜 20:37 JST (UTC 11:37)  Threadsの閲覧者が多い21〜24時を狙う
-    - cron: "37 13 * * *" # 毎日 夜 22:37 JST (UTC 13:37)
+    - cron: "37 11 * * *" # 毎日 夜 20:37 JST (UTC 11:37) 1日1本。Threadsの閲覧者が多い21〜24時を狙う
   workflow_dispatch:
     inputs:
       send:
