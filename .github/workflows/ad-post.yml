@@ -52,6 +52,8 @@ jobs:
           [ "$SEND" = "true" ] && args="$args --send"
           [ "$THREADS" = "true" ] && args="$args --threads"
           if [ -n "$DAY" ]; then args="$args --day $DAY --force"; fi
+          # projects/x-poster/PAUSED があるあいだは、X への広告投稿も止める(消せば再開)
+          if [ -f projects/x-poster/PAUSED ]; then echo "X は一時停止中のため投稿しません" | tee /tmp/ad.log; exit 0; fi
           python3 projects/ad-poster/post_ad.py $args 2>&1 | tee /tmp/ad.log
 
       - name: Notify result
@@ -63,6 +65,7 @@ jobs:
         run: |
           f=/tmp/ad.log
           if [ ! -s "$f" ]; then r="⚠️ 記録なし(実行されませんでした)"
+          elif grep -q "一時停止" "$f"; then r="⏸ 一時停止中(投稿なし)"
           elif grep -q "期間外" "$f"; then r="⚪ 期間外(投稿なし)"
           elif grep -q "投稿しました" "$f"; then r="✅ 投稿しました — $(head -1 "$f")"
           else r="❌ 失敗 — $(grep -m1 'エラー' "$f" || tail -n 1 "$f")"; fi

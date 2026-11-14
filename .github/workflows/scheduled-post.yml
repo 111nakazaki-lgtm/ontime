@@ -36,6 +36,8 @@ jobs:
         run: |
           set -o pipefail
           flag=""; [ "$SEND" = "true" ] && flag="--send"
+          # projects/x-poster/PAUSED があるあいだは、X への投稿を止める(消せば再開)
+          if [ -f projects/x-poster/PAUSED ]; then echo "X は一時停止中のため投稿しません" | tee /tmp/x.log; exit 0; fi
           if [ "$SEND" = "true" ] && [ -z "$X_API_KEY" ]; then echo "X のシークレット未設定のためスキップ" | tee /tmp/x.log; exit 0; fi
           python3 projects/x-poster/post.py --queue projects/x-poster/queue.txt $flag 2>&1 | tee /tmp/x.log
 
@@ -75,6 +77,7 @@ jobs:
             if [ ! -s "$f" ]; then echo "⚠️ 記録なし(実行されませんでした)"
             elif grep -q "投稿しました" "$f"; then echo "✅ 投稿しました — $(head -1 "$f")"
             elif grep -q "キューが空" "$f"; then echo "⚪ キューが空(投稿なし)"
+            elif grep -q "一時停止" "$f"; then echo "⏸ 一時停止中(投稿なし)"
             elif grep -q "スキップ" "$f"; then echo "⚪ スキップ(シークレット未設定)"
             else echo "❌ 失敗 — $(grep -m1 'エラー' "$f" || tail -n 1 "$f")"; fi
           }
